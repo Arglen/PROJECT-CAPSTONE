@@ -1,0 +1,23 @@
+# TensorFlow Lite Keep Rules
+-keep class org.tensorflow.lite.** { *; }
+-keep class org.tensorflow.lite.support.** { *; }
+
+# Google MediaPipe Vision Keep Rules
+-keep class com.google.mediapipe.tasks.** { *; }
+-keep class com.google.mediapipe.framework.** { *; }
+-dontwarn com.google.mediapipe.proto.**
+-dontwarn autovalue.shaded.com.squareup.javapoet.**
+-dontwarn javax.lang.model.**
+
+# Gson & Data Models Keep Rules
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+-keep class com.example.system_mini_capstone.data.** { *; }
+-keep class com.example.system_mini_capstone.admin.** { *; }
+-keep class com.example.system_mini_capstone.translator.** { *; }
+
+# Firebase Firestore & Serialization Keep Rules
+-keep class com.google.firebase.firestore.** { *; }
+-keepclassmembers class * {
+    @com.google.firebase.firestore.PropertyName <fields>;
+    @com.google.firebase.firestore.PropertyName <methods>;
+}
