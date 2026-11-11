@@ -4,55 +4,27 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.system_mini_capstone.admin.config.ApiEnvironment
@@ -174,14 +146,26 @@ fun SystemConfigScreen(
         )
     }
 
+    val canSave = uiState.isDirty && uiState.isUrlValid && !uiState.isSaving
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("System Configuration", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "System Configuration",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Text("←", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
                 },
                 actions = {
@@ -190,10 +174,14 @@ fun SystemConfigScreen(
                     }
                     Button(
                         onClick = onSaveChanges,
-                        enabled = uiState.isDirty,
-                        modifier = Modifier.padding(end = 8.dp)
+                        enabled = canSave,
+                        modifier = Modifier.padding(end = 16.dp)
                     ) {
-                        Text(if (uiState.isDirty) "Save*" else "Saved")
+                        if (uiState.isSaving) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Text(if (uiState.isDirty) "Save*" else "Saved")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -223,13 +211,15 @@ fun SystemConfigScreen(
                     Tab(
                         selected = uiState.selectedSection == index,
                         onClick = { onSelectSection(index) },
-                        text = { Text(title) }
+                        text = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     )
                 }
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding(),
                 contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
@@ -250,6 +240,7 @@ fun SystemConfigScreen(
                         item {
                             BackendApiSection(
                                 config = uiState.config.apiConfig,
+                                urlError = uiState.urlError,
                                 onUpdateUrl = onUpdateApiBaseUrl,
                                 onUpdateKey = onUpdateApiKey,
                                 onUpdateEnv = onUpdateApiEnvironment,
@@ -286,13 +277,17 @@ fun SystemConfigScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = onSaveChanges,
-                        enabled = uiState.isDirty,
+                        enabled = canSave,
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)
                     ) {
-                        Text("Apply & Commit Configuration Changes")
+                        if (uiState.isSaving) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Text("Apply & Commit Configuration Changes")
+                        }
                     }
                     Spacer(modifier = Modifier.height(24.dp))
                 }
@@ -325,7 +320,6 @@ fun VisionSensitivitySection(
                 fontWeight = FontWeight.Bold
             )
 
-            // Min Detection Confidence
             SliderSettingItem(
                 title = "Min Hand Detection Confidence",
                 subtitle = "Initial anchor box detection score required to locate hands in frame.",
@@ -335,7 +329,6 @@ fun VisionSensitivitySection(
                 onValueChange = onUpdateDetection
             )
 
-            // Min Tracking Confidence
             SliderSettingItem(
                 title = "Min Landmark Tracking Confidence",
                 subtitle = "Confidence required to track 21 coordinates continuously between frames.",
@@ -345,7 +338,6 @@ fun VisionSensitivitySection(
                 onValueChange = onUpdateTracking
             )
 
-            // Min Presence Confidence
             SliderSettingItem(
                 title = "Min Hand Presence Confidence",
                 subtitle = "Ensures partial shadows or background edges are not classified as hands.",
@@ -355,17 +347,15 @@ fun VisionSensitivitySection(
                 onValueChange = onUpdatePresence
             )
 
-            // Debounce Consecutive Frames
             SliderSettingItem(
-                title = "Gesture Anti-Flicker Debounce",
-                subtitle = "Requires consecutive matching frames before speech / output triggers.",
+                title = "Debounce Frame Threshold",
+                subtitle = "Number of consecutive stable frames required before confirming a sign.",
                 value = config.debounceFrameCount.toFloat(),
-                valueRange = 2f..15f,
+                valueRange = 1f..15f,
                 displayValue = "${config.debounceFrameCount} frames",
                 onValueChange = { onUpdateDebounce(it.toInt()) }
             )
 
-            // Two hands toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -383,6 +373,7 @@ fun VisionSensitivitySection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Spacer(modifier = Modifier.width(12.dp))
                 Switch(checked = config.detectTwoHands, onCheckedChange = onUpdateTwoHands)
             }
         }
@@ -398,29 +389,23 @@ fun SliderSettingItem(
     displayValue: String,
     onValueChange: (Float) -> Unit
 ) {
-    Column {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
             )
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Text(
-                    text = displayValue,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+            Text(
+                text = displayValue,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
         Text(
             text = subtitle,
@@ -441,6 +426,7 @@ fun SliderSettingItem(
 @Composable
 fun BackendApiSection(
     config: BackendApiConfig,
+    urlError: String?,
     onUpdateUrl: (String) -> Unit,
     onUpdateKey: (String) -> Unit,
     onUpdateEnv: (ApiEnvironment) -> Unit,
@@ -468,7 +454,14 @@ fun BackendApiSection(
                     FilterChip(
                         selected = config.environment == env,
                         onClick = { onUpdateEnv(env) },
-                        label = { Text(env.label, fontSize = 12.sp) },
+                        label = {
+                            Text(
+                                env.label,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -479,6 +472,10 @@ fun BackendApiSection(
                 onValueChange = onUpdateUrl,
                 label = { Text("Base API Endpoint URL") },
                 singleLine = true,
+                isError = urlError != null,
+                supportingText = {
+                    urlError?.let { Text(text = it, color = MaterialTheme.colorScheme.error) }
+                },
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -490,8 +487,14 @@ fun BackendApiSection(
                 singleLine = true,
                 visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
-                    IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
-                        Text(if (isKeyVisible) "👁" else "🔒", fontSize = 18.sp)
+                    IconButton(
+                        onClick = { isKeyVisible = !isKeyVisible },
+                        modifier = Modifier.semantics { contentDescription = "Toggle API Key Visibility" }
+                    ) {
+                        Text(
+                            text = if (isKeyVisible) "👁" else "🔒",
+                            fontSize = 18.sp
+                        )
                     }
                 },
                 shape = RoundedCornerShape(12.dp),
@@ -622,14 +625,34 @@ fun CloudPrivacySection(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 SyncFrequency.entries.forEach { freq ->
-                    FilterChip(
-                        selected = config.cloudSyncFrequency == freq,
+                    val isSelected = config.cloudSyncFrequency == freq
+                    Surface(
                         onClick = { onUpdateSync(freq) },
-                        label = { Text(freq.label) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { role = Role.RadioButton }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(freq.label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            if (isSelected) {
+                                Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -640,14 +663,34 @@ fun CloudPrivacySection(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 FrameStoragePolicy.entries.forEach { policy ->
-                    FilterChip(
-                        selected = config.frameRecordingPolicy == policy,
+                    val isSelected = config.frameRecordingPolicy == policy
+                    Surface(
                         onClick = { onUpdatePolicy(policy) },
-                        label = { Text(policy.label) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { role = Role.RadioButton }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(policy.label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            if (isSelected) {
+                                Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
 

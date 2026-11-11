@@ -30,7 +30,7 @@ sealed interface LoginEvent {
     data class Error(val message: String) : LoginEvent
 }
 
-class LoginViewModel(
+class LoginViewModel @JvmOverloads constructor(
     application: Application,
     private val authRepository: AuthRepository = AuthRepositoryImpl()
 ) : AndroidViewModel(application) {
@@ -84,6 +84,8 @@ class LoginViewModel(
     }
 
     fun login() {
+        if (_uiState.value.isLoading) return
+
         val currentState = _uiState.value
         val username = currentState.username.trim()
         val password = currentState.password

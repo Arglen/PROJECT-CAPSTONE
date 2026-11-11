@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -33,20 +34,20 @@ import androidx.compose.ui.unit.sp
 fun SplashScreen(
     modifier: Modifier = Modifier,
 ) {
-    val scale = remember { Animatable(0.7f) }
-    val alpha = remember { Animatable(0f) }
+    val scale = remember { Animatable(0.95f) }
+    val alpha = remember { Animatable(0.5f) }
 
     LaunchedEffect(Unit) {
         alpha.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
         )
     }
 
     LaunchedEffect(Unit) {
         scale.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
         )
     }
 
@@ -107,7 +108,8 @@ fun SplashScreen(
         CircularProgressIndicator(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 64.dp)
+                .navigationBarsPadding()
+                .padding(bottom = 32.dp)
                 .size(36.dp),
             strokeWidth = 3.dp,
             color = MaterialTheme.colorScheme.primary

@@ -43,6 +43,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -242,9 +245,12 @@ fun UserManagementScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        onConfirmReject(rejectionFeedbackInput.ifBlank { "Submission does not meet landmark quality criteria." })
-                        rejectionFeedbackInput = ""
+                        if (rejectionFeedbackInput.isNotBlank()) {
+                            onConfirmReject(rejectionFeedbackInput.trim())
+                            rejectionFeedbackInput = ""
+                        }
                     },
+                    enabled = rejectionFeedbackInput.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
                     Text("Confirm Rejection")
@@ -265,7 +271,10 @@ fun UserManagementScreen(
                 title = { Text("Admin Account & Review", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Text("←", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

@@ -442,7 +442,10 @@ fun DashboardFeatureCard(
                     Text(
                         text = feature.title,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                     if (feature.isRestrictedToAdmin) {
                         Spacer(modifier = Modifier.width(8.dp))
@@ -455,7 +458,9 @@ fun DashboardFeatureCard(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onErrorContainer
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -466,7 +471,9 @@ fun DashboardFeatureCard(
                 Text(
                     text = feature.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
             }
 

@@ -14,7 +14,7 @@ data class CameraGestureConfig(
 enum class ApiEnvironment(val label: String, val defaultUrl: String) {
     PRODUCTION("Production", "https://api.signlink.app/"),
     STAGING("Staging", "https://staging-api.signlink.app/"),
-    LOCAL_DEV("Local Emulator", "http://10.0.2.2:8080/")
+    LOCAL_DEV("Local", "http://10.0.2.2:8080/")
 }
 
 /**

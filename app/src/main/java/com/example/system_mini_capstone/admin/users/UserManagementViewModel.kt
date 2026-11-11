@@ -24,7 +24,7 @@ data class UserManagementUiState(
     val statusMessage: String? = null
 )
 
-class UserManagementViewModel(
+class UserManagementViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: UserManagementRepository = UserManagementRepositoryImpl()
 ) : AndroidViewModel(application) {

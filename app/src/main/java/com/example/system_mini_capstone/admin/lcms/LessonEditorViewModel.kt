@@ -28,7 +28,7 @@ data class LessonEditorUiState(
     val isSavedSuccess: Boolean = false
 )
 
-class LessonEditorViewModel(
+class LessonEditorViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: LessonRepository = LessonRepositoryImpl()
 ) : AndroidViewModel(application) {
@@ -170,6 +170,7 @@ class LessonEditorViewModel(
      * Securely saves the work-in-progress lesson as a Draft without deploying live.
      */
     fun saveDraft() {
+        if (_uiState.value.isSaving) return
         val currentLesson = _uiState.value.lesson
         if (currentLesson.title.isBlank()) {
             _uiState.update {
@@ -197,6 +198,7 @@ class LessonEditorViewModel(
      * Validates lesson completeness and pushes to production as Published.
      */
     fun publishLesson() {
+        if (_uiState.value.isSaving) return
         val current = _uiState.value.lesson
         val errors = mutableMapOf<String, String>()
 

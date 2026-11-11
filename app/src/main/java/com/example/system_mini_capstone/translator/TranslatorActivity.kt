@@ -1,8 +1,11 @@
 package com.example.system_mini_capstone.translator
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,7 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -36,46 +41,104 @@ class TranslatorActivity : ComponentActivity() {
 
     private val viewModel: TranslatorViewModel by viewModels()
     private var landmarkerHelper: HandLandmarkerHelper? = null
+    private var previewViewRef: androidx.camera.view.PreviewView? = null
+    private var errorMessage by mutableStateOf<String?>(null)
 
     private val requestCameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (!isGranted) {
-            android.util.Log.w("TranslatorActivity", "Camera permission denied by user; falling back to simulated pipeline")
+        if (isGranted) {
+            errorMessage = null
+            previewViewRef?.let { bindCamera(it) }
+        } else {
+            errorMessage = "Camera permission is required for real-time sign detection."
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-
         setContent {
             System_mini_capstoneTheme {
                 val uiState by viewModel.uiState.collectAsState()
+                var showClearDialog by remember { mutableStateOf(false) }
+                var hasCameraPermission by remember {
+                    mutableStateOf(
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                    )
+                }
+
+                if (showClearDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showClearDialog = false },
+                        title = { Text("Clear Transcript") },
+                        text = { Text("Are you sure you want to clear the translation history?") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                viewModel.clearHistory()
+                                showClearDialog = false
+                            }) {
+                                Text("Clear")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showClearDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
 
                 TranslatorScreen(
                     uiState = uiState,
+                    hasCameraPermission = hasCameraPermission,
+                    errorMessage = errorMessage,
                     onBack = { finish() },
                     onToggleTts = viewModel::toggleTts,
                     onToggleSkeleton = viewModel::toggleSkeleton,
                     onToggleRecognition = viewModel::toggleRecognition,
-                    onClearHistory = viewModel::clearHistory,
+                    onClearHistory = { showClearDialog = true },
+                    onRequestPermission = {
+                        requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    },
+                    onOpenSettings = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", packageName, null)
+                        }
+                        startActivity(intent)
+                    },
+                    onTryAgain = {
+                        errorMessage = null
+                        previewViewRef?.let { bindCamera(it) }
+                    },
                     onPreviewViewCreated = { previewView ->
+                        previewViewRef = previewView
                         if (landmarkerHelper == null) {
-                            landmarkerHelper = HandLandmarkerHelper(applicationContext) { landmarks ->
-                                viewModel.processLandmarks(landmarks)
-                            }
+                            landmarkerHelper = HandLandmarkerHelper(
+                                context = applicationContext,
+                                onLandmarksDetected = { landmarks ->
+                                    viewModel.processLandmarks(landmarks)
+                                },
+                                onError = { err ->
+                                    errorMessage = err
+                                }
+                            )
                         }
                         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                            landmarkerHelper?.bindCameraUseCases(this, previewView)
+                            hasCameraPermission = true
+                            bindCamera(previewView)
+                        } else {
+                            hasCameraPermission = false
+                            requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                         }
                     }
                 )
             }
         }
+    }
+
+    private fun bindCamera(previewView: androidx.camera.view.PreviewView) {
+        landmarkerHelper?.bindCameraUseCases(this, previewView)
     }
 
     override fun onDestroy() {
@@ -88,17 +151,29 @@ class TranslatorActivity : ComponentActivity() {
 @Composable
 fun TranslatorScreen(
     uiState: TranslatorUiState,
+    hasCameraPermission: Boolean,
+    errorMessage: String?,
     onBack: () -> Unit,
     onToggleTts: (Boolean) -> Unit,
     onToggleSkeleton: (Boolean) -> Unit,
     onToggleRecognition: (Boolean) -> Unit,
     onClearHistory: () -> Unit,
+    onRequestPermission: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onTryAgain: () -> Unit,
     onPreviewViewCreated: (androidx.camera.view.PreviewView) -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SignLink Real-Time Translator", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "SignLink Real-Time Translator",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -106,7 +181,7 @@ fun TranslatorScreen(
                 },
                 actions = {
                     IconButton(onClick = onClearHistory) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear History")
+                        Icon(Icons.Default.Delete, contentDescription = "Clear History")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -132,18 +207,46 @@ fun TranslatorScreen(
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.DarkGray)
             ) {
-                // Live CameraX Preview View
-                AndroidView(
-                    factory = { ctx ->
-                        androidx.camera.view.PreviewView(ctx).also { previewView ->
-                            previewView.scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
-                            onPreviewViewCreated(previewView)
+                if (hasCameraPermission && errorMessage == null) {
+                    // Live CameraX Preview View
+                    AndroidView(
+                        factory = { ctx ->
+                            androidx.camera.view.PreviewView(ctx).also { previewView ->
+                                previewView.scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
+                                onPreviewViewCreated(previewView)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // Permission Denied or Camera Error View
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = errorMessage ?: "Camera permission is required for real-time sign detection.",
+                                color = Color.White,
+                                textAlign = TextAlign.Center
+                            )
+                            if (!hasCameraPermission) {
+                                Button(onClick = onRequestPermission) {
+                                    Text("Grant Permission")
+                                }
+                                TextButton(onClick = onOpenSettings) {
+                                    Text("Open App Settings", color = Color.Cyan)
+                                }
+                            } else {
+                                Button(onClick = onTryAgain) {
+                                    Text("Try Again")
+                                }
+                            }
                         }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                    }
+                }
 
-                // Status Indicator Overlay
+                // Truthful Status Indicator Overlay (Top Start)
                 Box(
                     modifier = Modifier.fillMaxSize().padding(12.dp),
                     contentAlignment = Alignment.TopStart
@@ -159,10 +262,10 @@ fun TranslatorScreen(
                             modifier = Modifier
                                 .size(10.dp)
                                 .clip(CircleShape)
-                                .background(if (uiState.isRecognizing) Color.Green else Color.Red)
+                                .background(if (uiState.statusMessage.contains("Hand detected")) Color.Green else Color.Yellow)
                         )
                         Text(
-                            text = if (uiState.isRecognizing) "CAM & MEDIAPIPE LIVE" else "PAUSED",
+                            text = uiState.statusMessage.uppercase(),
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -171,7 +274,7 @@ fun TranslatorScreen(
                 }
 
                 // Landmark Skeleton Overlay Canvas
-                if (uiState.isDrawSkeletonEnabled) {
+                if (uiState.isDrawSkeletonEnabled && hasCameraPermission && errorMessage == null) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val landmarks = uiState.simulatedLandmarks
                         if (landmarks.size >= 21) {
@@ -210,37 +313,44 @@ fun TranslatorScreen(
                     }
                 }
 
-                // Real-Time Sign Text Overlay Badge
+                // Real-Time Sign Text Overlay Badge (Positioned at Top-End)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.BottomCenter
+                        .padding(12.dp),
+                    contentAlignment = Alignment.TopEnd
                 ) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)),
-                        shape = RoundedCornerShape(12.dp)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.revertedColorAlpha(0.85f)),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.End
                         ) {
                             Text(
                                 text = uiState.currentSign,
                                 color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 28.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Confidence: ${(uiState.confidence * 100).toInt()}%",
+                                text = "${(uiState.confidence * 100).toInt()}%",
                                 color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                                fontSize = 13.sp
+                                fontSize = 11.sp
                             )
                         }
                     }
                 }
             }
+
+            // B2.6 Status Line under camera
+            Text(
+                text = if (hasCameraPermission && errorMessage == null) "Show your hand to the camera" else (errorMessage ?: "Camera permission required"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
 
             // Accessibility & TTS Controls Row
             Card(
@@ -350,4 +460,8 @@ fun TranslatorScreen(
             }
         }
     }
+}
+
+private fun Color.revertedColorAlpha(alpha: Float): Color {
+    return this.copy(alpha = alpha)
 }

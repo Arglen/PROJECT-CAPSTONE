@@ -2,17 +2,39 @@ package com.example.system_mini_capstone.admin.config
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 data class SystemConfigUiState(
     val config: FullSystemConfig = FullSystemConfig(),
     val selectedSection: Int = 0,
     val isDirty: Boolean = false,
+    val isSaving: Boolean = false,
     val statusMessage: String? = null
-)
+) {
+    val isUrlValid: Boolean
+        get() {
+            val url = config.apiConfig.baseUrl
+            return (url.startsWith("http://") || url.startsWith("https://")) && url.endsWith("/") && !url.contains(" ")
+        }
+
+    val urlError: String?
+        get() {
+            if (isUrlValid) return null
+            val url = config.apiConfig.baseUrl
+            return when {
+                url.isBlank() -> "URL cannot be blank"
+                !url.startsWith("http://") && !url.startsWith("https://") -> "Must start with http:// or https://"
+                !url.endsWith("/") -> "Must end with '/'"
+                url.contains(" ") -> "Cannot contain spaces"
+                else -> "Invalid URL format"
+            }
+        }
+}
 
 class SystemConfigViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -212,13 +234,20 @@ class SystemConfigViewModel(application: Application) : AndroidViewModel(applica
 
     // Actions
     fun saveChanges() {
-        val current = _uiState.value.config
-        configManager.saveConfig(current)
-        _uiState.update {
-            it.copy(
-                isDirty = false,
-                statusMessage = "Configuration saved successfully!"
-            )
+        val state = _uiState.value
+        if (state.isSaving || !state.isDirty || !state.isUrlValid) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            val current = _uiState.value.config
+            configManager.saveConfig(current)
+            _uiState.update {
+                it.copy(
+                    isDirty = false,
+                    isSaving = false,
+                    statusMessage = "Configuration applied & committed successfully!"
+                )
+            }
         }
     }
 

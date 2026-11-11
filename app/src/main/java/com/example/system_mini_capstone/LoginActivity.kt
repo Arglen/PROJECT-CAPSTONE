@@ -9,6 +9,7 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,6 +32,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +44,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -56,15 +62,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.system_mini_capstone.ui.LoginEvent
 import com.example.system_mini_capstone.ui.LoginUiState
 import com.example.system_mini_capstone.ui.LoginViewModel
 import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 
-/**
- * Screen presented when user authentication is required.
- * Authenticates user credentials via Retrofit using OAuth2 / JWT protocols.
- */
 class LoginActivity : ComponentActivity() {
 
     private val viewModel: LoginViewModel by viewModels()
@@ -80,23 +81,26 @@ class LoginActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     viewModel.eventFlow.collect { event ->
                         when (event) {
-                            is LoginEvent.Success -> {
-                                Toast.makeText(
-                                    this@LoginActivity,
-                                    "Welcome back (${event.role}): ${event.email}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            is com.example.system_mini_capstone.ui.LoginEvent.Success -> {
+                                Toast.makeText(this@LoginActivity, "Welcome back (${event.role}): ${event.email}", Toast.LENGTH_SHORT).show()
                                 navigateToDashboard()
                             }
-                            is LoginEvent.Error -> {
+                            is com.example.system_mini_capstone.ui.LoginEvent.Error -> {
                                 snackbarHostState.showSnackbar(event.message)
                             }
                         }
                     }
                 }
 
+                @OptIn(ExperimentalMaterial3Api::class)
                 Scaffold(
-                    snackbarHost = { SnackbarHost(snackbarHostState) }
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                    topBar = {
+                        TopAppBar(
+                            title = { Text("SignLink Sign-In", fontWeight = FontWeight.Bold) },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                        )
+                    }
                 ) { innerPadding ->
                     LoginScreenContent(
                         uiState = uiState,
@@ -144,7 +148,11 @@ fun LoginScreenContent(
 
     Column(
         modifier = modifier
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { keyboardController?.hide() })
+            }
             .verticalScroll(scrollState)
+            .imePadding()
             .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -160,13 +168,13 @@ fun LoginScreenContent(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
-                    text = "✋",
+                    text = "👋",
                     fontSize = 38.sp
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
             text = "Welcome to SignLink",
@@ -175,17 +183,54 @@ fun LoginScreenContent(
             color = MaterialTheme.colorScheme.onBackground
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "Authenticate with OAuth2 / JWT to continue",
+            text = "Sign Language Translation & Curriculum Hub",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Error Banner
+        // Demo Presets Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+        ) {
+            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Quick Test Presets (Offline Login)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { onSelectPreset("admin@signlink.app", "admin123") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Admin Demo", fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = { onSelectPreset("user@signlink.app", "user123") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("User Demo", fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Error message banner
         AnimatedVisibility(
             visible = uiState.errorMessage != null,
             enter = fadeIn(),
@@ -321,41 +366,9 @@ fun LoginScreenContent(
             } else {
                 Text(
                     text = "Sign In",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Demo / Preset Credentials Section
-        Text(
-            text = "Role Verification Quick Presets:",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.outline
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedButton(
-                onClick = { onSelectPreset("admin@signlink.app", "admin123") },
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Admin Role")
-            }
-
-            OutlinedButton(
-                onClick = { onSelectPreset("user@signlink.app", "user123") },
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("User Role")
             }
         }
     }

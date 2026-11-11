@@ -42,7 +42,7 @@ sealed interface ForgotPasswordEvent {
     data object PasswordResetSuccess : ForgotPasswordEvent
 }
 
-class ForgotPasswordViewModel(
+class ForgotPasswordViewModel @JvmOverloads constructor(
     application: Application,
     private val authRepository: AuthRepository = AuthRepositoryImpl()
 ) : AndroidViewModel(application) {
@@ -105,6 +105,7 @@ class ForgotPasswordViewModel(
      * Step 1: Requests a password recovery link / token from the backend.
      */
     fun sendRecoveryRequest() {
+        if (_uiState.value.isLoading) return
         val email = _uiState.value.email.trim()
 
         if (email.isBlank()) {
@@ -147,6 +148,7 @@ class ForgotPasswordViewModel(
      * Step 2: Validates the token and sets the new password.
      */
     fun submitNewPassword() {
+        if (_uiState.value.isLoading) return
         val currentState = _uiState.value
         val email = currentState.email.trim()
         val token = currentState.resetToken.trim()

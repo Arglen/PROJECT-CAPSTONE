@@ -3,18 +3,14 @@ package com.example.system_mini_capstone.translator
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.system_mini_capstone.ml.GestureClassification
+import com.example.system_mini_capstone.admin.config.SystemConfigManager
 import com.example.system_mini_capstone.ml.HandLandmark
 import com.example.system_mini_capstone.ml.SignClassifierEngine
 import com.example.system_mini_capstone.tts.TtsManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class TranslationRecord(
@@ -25,138 +21,169 @@ data class TranslationRecord(
 )
 
 data class TranslatorUiState(
-    val currentSign: String = "READY",
+    val currentSign: String = "No hand detected",
     val confidence: Float = 0f,
     val topPredictions: List<Pair<String, Float>> = emptyList(),
     val translationHistory: List<TranslationRecord> = emptyList(),
     val isTtsEnabled: Boolean = true,
     val isDrawSkeletonEnabled: Boolean = true,
     val isRecognizing: Boolean = true,
-    val simulatedLandmarks: List<HandLandmark> = emptyList()
+    val simulatedLandmarks: List<HandLandmark> = emptyList(),
+    val statusMessage: String = "No hand detected"
 )
 
 class TranslatorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val classifierEngine = SignClassifierEngine()
     private val ttsManager = TtsManager(application)
+    private val configManager = SystemConfigManager(application)
+    private val systemConfig = configManager.loadConfig()
 
-    private val _uiState = MutableStateFlow(TranslatorUiState())
+    private val _uiState = MutableStateFlow(
+        TranslatorUiState(
+            isTtsEnabled = systemConfig.featureToggles.autoPronounceTts,
+            isDrawSkeletonEnabled = systemConfig.featureToggles.drawHandLandmarkSkeleton
+        )
+    )
     val uiState: StateFlow<TranslatorUiState> = _uiState.asStateFlow()
 
-    private var recognitionJob: Job? = null
-    private var lastSpokenSign: String = ""
-
-    init {
-        startRealtimeSimulationLoop()
-    }
-
-    /**
-     * Starts a simulated real-time hand tracking and classification loop
-     * (in production, feeds CameraX / MediaPipe HandLandmark frames).
-     */
-    fun startRealtimeSimulationLoop() {
-        recognitionJob?.cancel()
-        recognitionJob = viewModelScope.launch(Dispatchers.Default) {
-            val sampleSigns = listOf("HELLO", "THANK_YOU", "YES", "NO", "PLEASE", "HELP", "A", "B", "C")
-            var sampleIndex = 0
-
-            while (isActive) {
-                delay(2200) // Simulate gesture cadence
-                if (_uiState.value.isRecognizing) {
-                    val targetSign = sampleSigns[sampleIndex % sampleSigns.size]
-                    sampleIndex++
-
-                    // Generate synthetic 21 hand landmarks for testing classification engine
-                    val syntheticLandmarks = generateSyntheticLandmarks(targetSign)
-                    val result = classifierEngine.classifyGesture(syntheticLandmarks)
-
-                    val signToProcess = if (result.confidence > 0.75f) result.gestureName else targetSign
-                    val confidenceScore = if (result.confidence > 0.75f) result.confidence else 0.91f
-
-                    _uiState.update { state ->
-                        val newRecord = TranslationRecord(
-                            signText = signToProcess,
-                            confidence = confidenceScore
-                        )
-                        val updatedHistory = listOf(newRecord) + state.translationHistory.take(19)
-
-                        state.copy(
-                            currentSign = signToProcess,
-                            confidence = confidenceScore,
-                            topPredictions = result.topPredictions.ifEmpty { listOf(Pair(signToProcess, confidenceScore)) },
-                            translationHistory = updatedHistory,
-                            simulatedLandmarks = syntheticLandmarks
-                        )
-                    }
-
-                    // Speak automatically via TextToSpeech if enabled and sign changed/stabilized
-                    if (_uiState.value.isTtsEnabled && signToProcess != lastSpokenSign && signToProcess != "READY") {
-                        lastSpokenSign = signToProcess
-                        ttsManager.speak(signToProcess)
-                    }
-                }
-            }
-        }
-    }
+    // Sliding window parameters driven by saved System Config debounceFrameCount
+    private val requiredStableFrames = systemConfig.gestureConfig.debounceFrameCount.coerceIn(1, 15)
+    private val windowSize = requiredStableFrames + 4
+    private val recentFrames = mutableListOf<Pair<String, Float>>()
+    private var lastAddedSign: String = ""
+    private var lastHandSeenTimestamp: Long = System.currentTimeMillis()
 
     fun processLandmarks(landmarks: List<HandLandmark>) {
-        val result = classifierEngine.classifyGesture(landmarks)
-        if (result.confidence > 0.65f) {
-            val sign = result.gestureName
-            _uiState.update { state ->
-                val newRecord = TranslationRecord(signText = sign, confidence = result.confidence)
-                val updatedHistory = listOf(newRecord) + state.translationHistory.take(19)
-                state.copy(
-                    currentSign = sign,
-                    confidence = result.confidence,
-                    topPredictions = result.topPredictions,
-                    translationHistory = updatedHistory,
-                    simulatedLandmarks = landmarks
+        if (!_uiState.value.isRecognizing) return
+
+        val now = System.currentTimeMillis()
+
+        if (landmarks.isEmpty()) {
+            if (now - lastHandSeenTimestamp >= 500) {
+                lastAddedSign = ""
+            }
+            recentFrames.clear()
+            _uiState.update {
+                it.copy(
+                    currentSign = "No hand detected",
+                    confidence = 0f,
+                    simulatedLandmarks = emptyList(),
+                    statusMessage = "No hand detected"
                 )
             }
-            if (_uiState.value.isTtsEnabled && sign != lastSpokenSign && sign != "NONE" && sign != "WAITING") {
-                lastSpokenSign = sign
-                ttsManager.speak(sign)
+            return
+        }
+
+        lastHandSeenTimestamp = now
+
+        viewModelScope.launch {
+            val result = classifierEngine.classifyGesture(landmarks)
+            val detectedSign = result.gestureName
+            val confidence = result.confidence
+
+            if (detectedSign != "UNKNOWN" && confidence >= 0.70f) {
+                recentFrames.add(Pair(detectedSign, confidence))
+                if (recentFrames.size > windowSize) {
+                    recentFrames.removeAt(0)
+                }
+            } else {
+                recentFrames.add(Pair("UNKNOWN", 0f))
+                if (recentFrames.size > windowSize) {
+                    recentFrames.removeAt(0)
+                }
+            }
+
+            val validFrames = recentFrames.filter { it.first != "UNKNOWN" }
+            val signCounts = validFrames.groupingBy { it.first }.eachCount()
+            val dominantEntry = signCounts.entries.maxByOrNull { it.value }
+
+            if (dominantEntry != null && dominantEntry.value >= requiredStableFrames) {
+                val stableSign = dominantEntry.key
+                val meanConf = validFrames.filter { it.first == stableSign }.map { it.second }.average().toFloat()
+
+                if (meanConf >= 0.70f) {
+                    _uiState.update { state ->
+                        val isNewGesture = lastAddedSign != stableSign
+                        val updatedHistory = if (isNewGesture) {
+                            listOf(TranslationRecord(signText = stableSign, confidence = meanConf)) + state.translationHistory.take(19)
+                        } else {
+                            state.translationHistory
+                        }
+
+                        if (isNewGesture) {
+                            lastAddedSign = stableSign
+                            if (state.isTtsEnabled) {
+                                ttsManager.speak(stableSign)
+                            }
+                        }
+
+                        state.copy(
+                            currentSign = stableSign,
+                            confidence = meanConf,
+                            topPredictions = result.topPredictions,
+                            translationHistory = updatedHistory,
+                            simulatedLandmarks = landmarks,
+                            statusMessage = "Hand detected"
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            currentSign = "Detecting...",
+                            confidence = confidence,
+                            simulatedLandmarks = landmarks,
+                            statusMessage = "Hand detected"
+                        )
+                    }
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        currentSign = "Detecting...",
+                        confidence = confidence,
+                        simulatedLandmarks = landmarks,
+                        statusMessage = "Hand detected"
+                    )
+                }
             }
         }
     }
 
     fun toggleTts(enabled: Boolean) {
         _uiState.update { it.copy(isTtsEnabled = enabled) }
+        val currentConfig = configManager.loadConfig()
+        configManager.saveConfig(currentConfig.copy(featureToggles = currentConfig.featureToggles.copy(autoPronounceTts = enabled)))
     }
 
     fun toggleSkeleton(enabled: Boolean) {
         _uiState.update { it.copy(isDrawSkeletonEnabled = enabled) }
+        val currentConfig = configManager.loadConfig()
+        configManager.saveConfig(currentConfig.copy(featureToggles = currentConfig.featureToggles.copy(drawHandLandmarkSkeleton = enabled)))
     }
 
     fun toggleRecognition(recognizing: Boolean) {
-        _uiState.update { it.copy(isRecognizing = recognizing) }
+        _uiState.update {
+            it.copy(
+                isRecognizing = recognizing,
+                statusMessage = if (recognizing) "No hand detected" else "Paused"
+            )
+        }
     }
 
     fun clearHistory() {
-        _uiState.update { it.copy(translationHistory = emptyList(), currentSign = "READY", confidence = 0f) }
-    }
-
-    private fun generateSyntheticLandmarks(sign: String): List<HandLandmark> {
-        val list = mutableListOf<HandLandmark>()
-        // Wrist at (0.5, 0.8)
-        list.add(HandLandmark(0.5f, 0.8f, 0.0f))
-        // 20 other joints
-        for (i in 1..20) {
-            val spread = when (sign) {
-                "HELLO" -> 0.15f
-                "YES" -> 0.05f
-                "NO" -> 0.08f
-                else -> 0.1f
-            }
-            list.add(HandLandmark(0.5f + (i * 0.02f * spread), 0.5f - (i * 0.015f), 0.01f * i))
+        _uiState.update {
+            it.copy(
+                translationHistory = emptyList(),
+                currentSign = "No hand detected",
+                confidence = 0f,
+                simulatedLandmarks = emptyList()
+            )
         }
-        return list
     }
 
     override fun onCleared() {
         super.onCleared()
-        recognitionJob?.cancel()
         classifierEngine.close()
         ttsManager.shutdown()
     }

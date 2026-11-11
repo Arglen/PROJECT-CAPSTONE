@@ -38,7 +38,7 @@ sealed interface AnalyticsEvent {
     data class Error(val message: String) : AnalyticsEvent
 }
 
-class AdminAnalyticsViewModel(
+class AdminAnalyticsViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: AnalyticsRepository = AnalyticsRepositoryImpl()
 ) : AndroidViewModel(application) {

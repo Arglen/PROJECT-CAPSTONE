@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -18,14 +19,18 @@ import kotlinx.coroutines.launch
 
 /**
  * Entry point activity of the application.
- * Displays the initial splash screen, executes the session validation routine,
- * and routes directly to the Dashboard or Login Screen.
+ * Utilizes androidx.core:core-splashscreen to eliminate white flashes and double splashes.
  */
 class SplashActivity : ComponentActivity() {
 
     private val viewModel: SplashViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Install Core SplashScreen before super.onCreate()
+        installSplashScreen().setKeepOnScreenCondition {
+            viewModel.navigationState.value is SplashNavigationState.Loading
+        }
+
         super.onCreate(savedInstanceState)
 
         setContent {

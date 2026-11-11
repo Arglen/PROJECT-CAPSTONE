@@ -23,7 +23,7 @@ data class MaintenanceUiState(
     val statusMessage: String? = null
 )
 
-class MaintenanceViewModel(
+class MaintenanceViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: MaintenanceRepository = MaintenanceRepositoryImpl()
 ) : AndroidViewModel(application) {
