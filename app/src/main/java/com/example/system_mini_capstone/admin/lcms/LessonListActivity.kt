@@ -35,6 +35,16 @@ class LessonListActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (com.example.system_mini_capstone.data.SessionManager(this).getUserRole() != "ADMIN") {
+            android.util.Log.w("AdminGuard", "Unauthorized access attempt to ${this::class.java.simpleName}. Redirecting.")
+            val intent = android.content.Intent(this, com.example.system_mini_capstone.DashboardActivity::class.java).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            startActivity(intent)
+            finish()
+            return
+        }
+
         setContent {
             System_mini_capstoneTheme {
                 var lessons by remember { mutableStateOf<List<LessonItem>>(emptyList()) }

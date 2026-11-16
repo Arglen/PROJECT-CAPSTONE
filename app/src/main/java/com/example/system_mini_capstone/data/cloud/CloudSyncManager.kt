@@ -54,6 +54,12 @@ class CloudSyncManager(private val context: Context) {
      * Synchronizes and fetches newly published lessons and media assets from Firestore LCMS.
      */
     suspend fun fetchPublishedLessonsFromCloud(): List<CloudLessonPayload> {
+        val userRole = com.example.system_mini_capstone.data.SessionManager(context).getUserRole()
+        if (userRole == "GUEST") {
+            Log.i(TAG, "Guest mode active: Skipping cloud lesson sync.")
+            return getFallbackLessons()
+        }
+
         val trace = FirebasePerformance.getInstance().newTrace("fetch_cloud_lessons_trace")
         trace.start()
         try {
@@ -85,6 +91,9 @@ class CloudSyncManager(private val context: Context) {
      * Logs administrator activity to Firestore activity audit collection.
      */
     fun logAdminActivity(adminEmail: String, actionType: String, details: String) {
+        val userRole = com.example.system_mini_capstone.data.SessionManager(context).getUserRole()
+        if (userRole != "ADMIN") return
+
         try {
             val db = firestore ?: return
             val logEntry = AdminActivityLog(adminEmail, actionType, details)

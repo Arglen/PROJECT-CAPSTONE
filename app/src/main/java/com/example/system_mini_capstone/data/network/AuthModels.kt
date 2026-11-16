@@ -55,7 +55,8 @@ data class UserDto(
 
 enum class UserRole {
     USER,
-    ADMIN;
+    ADMIN,
+    GUEST;
 
     companion object {
         fun fromString(value: String?): UserRole {

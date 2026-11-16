@@ -38,6 +38,11 @@
             android:theme="@style/Theme.System_mini_capstone" />
 
         <activity
+            android:name=".RegisterActivity"
+            android:exported="false"
+            android:theme="@style/Theme.System_mini_capstone" />
+
+        <activity
             android:name=".ForgotPasswordActivity"
             android:exported="false"
             android:theme="@style/Theme.System_mini_capstone" />
@@ -79,6 +84,11 @@
 
         <activity
             android:name=".admin.lcms.LessonEditorActivity"
+            android:exported="false"
+            android:theme="@style/Theme.System_mini_capstone" />
+
+        <activity
+            android:name=".admin.studio.SignSamplesActivity"
             android:exported="false"
             android:theme="@style/Theme.System_mini_capstone" />
 

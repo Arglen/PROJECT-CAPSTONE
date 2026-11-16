@@ -7,45 +7,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -108,6 +76,9 @@ class DashboardActivity : ComponentActivity() {
                             "gesture_dictionary" -> {
                                 startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.lcms.LessonListActivity::class.java))
                             }
+                            "sign_samples" -> {
+                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.studio.SignSamplesActivity::class.java))
+                            }
                             "admin_gesture_studio", "tts_settings" -> {
                                 startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.SystemConfigActivity::class.java))
                             }
@@ -120,6 +91,9 @@ class DashboardActivity : ComponentActivity() {
                                 }
                             }
                         }
+                    },
+                    onCreateAccountClick = {
+                        startActivity(Intent(this@DashboardActivity, RegisterActivity::class.java))
                     },
                     onPromptLogout = viewModel::promptLogout,
                     onDismissLogout = viewModel::dismissLogout,
@@ -148,23 +122,25 @@ fun DashboardScreen(
     snackbarHostState: SnackbarHostState,
     onSelectTab: (DashboardNavTab) -> Unit,
     onFeatureClick: (DashboardFeatureItem) -> Unit,
+    onCreateAccountClick: () -> Unit,
     onPromptLogout: () -> Unit,
     onDismissLogout: () -> Unit,
     onConfirmLogout: () -> Unit
 ) {
     val isAdmin = uiState.userRole == UserRole.ADMIN
+    val isGuest = uiState.userRole == UserRole.GUEST
 
     if (uiState.showLogoutDialog) {
         AlertDialog(
             onDismissRequest = onDismissLogout,
-            title = { Text("Sign Out") },
-            text = { Text("Are you sure you want to end your current authenticated session?") },
+            title = { Text(if (isGuest) "Exit Guest Mode" else "Sign Out") },
+            text = { Text(if (isGuest) "Exit guest mode and return to sign in?" else "Are you sure you want to end your current authenticated session?") },
             confirmButton = {
                 Button(
                     onClick = onConfirmLogout,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Sign Out")
+                    Text(if (isGuest) "Exit Guest Mode" else "Sign Out")
                 }
             },
             dismissButton = {
@@ -179,25 +155,19 @@ fun DashboardScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "SignLink Hub",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        // RBAC Role Badge
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isAdmin) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
-                        ) {
+                title = { Text("SignLink Hub", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = uiState.userRole.name,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isAdmin) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                text = if (isAdmin) "🛡️" else if (isGuest) "👤" else "🤟",
+                                fontSize = 18.sp
                             )
                         }
                     }
@@ -251,10 +221,10 @@ fun DashboardScreen(
 
             // Role Banner
             item {
-                if (isAdmin) {
-                    AdminPrivilegesBanner()
-                } else {
-                    UserWelcomeBanner()
+                when {
+                    isAdmin -> AdminPrivilegesBanner()
+                    isGuest -> GuestBanner(onCreateAccountClick = onCreateAccountClick)
+                    else -> UserWelcomeBanner()
                 }
             }
 
@@ -292,7 +262,7 @@ fun DashboardScreen(
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("End Session & Sign Out")
+                    Text(if (isGuest) "Exit Guest Mode" else "End Session & Sign Out")
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }
@@ -305,6 +275,8 @@ fun UserHeaderCard(
     uiState: DashboardUiState,
     isAdmin: Boolean
 ) {
+    val isGuest = uiState.userRole == UserRole.GUEST
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -321,10 +293,14 @@ fun UserHeaderCard(
             Surface(
                 modifier = Modifier.size(54.dp),
                 shape = CircleShape,
-                color = if (isAdmin) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
+                color = when {
+                    isAdmin -> MaterialTheme.colorScheme.errorContainer
+                    isGuest -> MaterialTheme.colorScheme.tertiaryContainer
+                    else -> MaterialTheme.colorScheme.primaryContainer
+                }
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(text = if (isAdmin) "🛡️" else "👤", fontSize = 26.sp)
+                    Text(text = if (isAdmin) "🛡️" else if (isGuest) "👤" else "👤", fontSize = 26.sp)
                 }
             }
 
@@ -332,22 +308,67 @@ fun UserHeaderCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Hello, ${uiState.username}",
+                    text = if (isGuest) "Guest User" else "Hello, ${uiState.username}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = uiState.userEmail,
+                    text = if (isGuest) "Guest Mode (Local Session)" else uiState.userEmail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "JWT Session: ${uiState.tokenPreview}...",
+                    text = "Role: ${uiState.userRole.name}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun GuestBanner(onCreateAccountClick: () -> Unit) {
+    var isDismissed by remember { mutableStateOf(false) }
+    if (isDismissed) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "👤 Guest Mode Active",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                TextButton(onClick = { isDismissed = true }) {
+                    Text("Dismiss", color = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "You are using Guest mode. Create an account to save your progress.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = onCreateAccountClick,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Create Account", fontSize = 13.sp)
             }
         }
     }

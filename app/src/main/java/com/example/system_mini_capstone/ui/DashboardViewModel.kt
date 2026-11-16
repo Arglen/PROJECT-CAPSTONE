@@ -109,6 +109,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 iconEmoji = "🛠️",
                 isRestrictedToAdmin = true,
                 routeAction = "action_admin_maintenance"
+            ),
+            DashboardFeatureItem(
+                id = "sign_samples",
+                title = "Sign Samples Studio",
+                description = "Record 21-hand landmark vector samples for custom ASL sign recognition training.",
+                iconEmoji = "📸",
+                isRestrictedToAdmin = true,
+                routeAction = "action_sign_samples"
             )
         )
 

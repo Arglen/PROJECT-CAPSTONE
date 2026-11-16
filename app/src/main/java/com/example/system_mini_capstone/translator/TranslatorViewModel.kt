@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.system_mini_capstone.admin.config.SystemConfigManager
+import com.example.system_mini_capstone.admin.studio.SignSampleNormalizer
 import com.example.system_mini_capstone.ml.HandLandmark
 import com.example.system_mini_capstone.ml.SignClassifierEngine
+import com.example.system_mini_capstone.ml.SignMatcherEngine
 import com.example.system_mini_capstone.tts.TtsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,12 +31,15 @@ data class TranslatorUiState(
     val isDrawSkeletonEnabled: Boolean = true,
     val isRecognizing: Boolean = true,
     val simulatedLandmarks: List<HandLandmark> = emptyList(),
-    val statusMessage: String = "No hand detected"
+    val statusMessage: String = "No hand detected",
+    val sampleLoadStatus: String = "Loading signs...",
+    val debugMatchInfo: String = ""
 )
 
 class TranslatorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val classifierEngine = SignClassifierEngine()
+    private val matcherEngine = SignMatcherEngine(application)
     private val ttsManager = TtsManager(application)
     private val configManager = SystemConfigManager(application)
     private val systemConfig = configManager.loadConfig()
@@ -54,6 +59,15 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
     private var lastAddedSign: String = ""
     private var lastHandSeenTimestamp: Long = System.currentTimeMillis()
 
+    init {
+        viewModelScope.launch {
+            matcherEngine.loadSamples()
+            val count = matcherEngine.loadedCount
+            val status = if (count > 0) "Signs loaded: $count" else "No signs recorded yet"
+            _uiState.update { it.copy(sampleLoadStatus = status) }
+        }
+    }
+
     fun processLandmarks(landmarks: List<HandLandmark>) {
         if (!_uiState.value.isRecognizing) return
 
@@ -69,7 +83,8 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
                     currentSign = "No hand detected",
                     confidence = 0f,
                     simulatedLandmarks = emptyList(),
-                    statusMessage = "No hand detected"
+                    statusMessage = "No hand detected",
+                    debugMatchInfo = ""
                 )
             }
             return
@@ -77,10 +92,26 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
 
         lastHandSeenTimestamp = now
 
+        // Use first hand only if two hands are detected
+        val singleHand = if (landmarks.size >= 42) landmarks.take(21) else landmarks
+
         viewModelScope.launch {
-            val result = classifierEngine.classifyGesture(landmarks)
-            val detectedSign = result.gestureName
-            val confidence = result.confidence
+            // 1. Try k-NN Sign Matcher first using recorded sign samples
+            val normalized = SignSampleNormalizer.normalize(singleHand)
+            val matchResult = matcherEngine.match(normalized)
+
+            val detectedSign: String
+            val confidence: Float
+
+            if (matchResult.label != "UNKNOWN") {
+                detectedSign = matchResult.label
+                confidence = matchResult.confidence
+            } else {
+                // 2. Fall back to heuristic classifier if no recorded samples match
+                val fallbackResult = classifierEngine.classifyGesture(singleHand)
+                detectedSign = fallbackResult.gestureName
+                confidence = fallbackResult.confidence
+            }
 
             if (detectedSign != "UNKNOWN" && confidence >= 0.70f) {
                 recentFrames.add(Pair(detectedSign, confidence))
@@ -121,10 +152,10 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
                         state.copy(
                             currentSign = stableSign,
                             confidence = meanConf,
-                            topPredictions = result.topPredictions,
                             translationHistory = updatedHistory,
-                            simulatedLandmarks = landmarks,
-                            statusMessage = "Hand detected"
+                            simulatedLandmarks = singleHand,
+                            statusMessage = "Hand detected",
+                            debugMatchInfo = matchResult.debugInfo
                         )
                     }
                 } else {
@@ -132,8 +163,9 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
                         it.copy(
                             currentSign = "Detecting...",
                             confidence = confidence,
-                            simulatedLandmarks = landmarks,
-                            statusMessage = "Hand detected"
+                            simulatedLandmarks = singleHand,
+                            statusMessage = "Hand detected",
+                            debugMatchInfo = matchResult.debugInfo
                         )
                     }
                 }
@@ -142,8 +174,9 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
                     it.copy(
                         currentSign = "Detecting...",
                         confidence = confidence,
-                        simulatedLandmarks = landmarks,
-                        statusMessage = "Hand detected"
+                        simulatedLandmarks = singleHand,
+                        statusMessage = "Hand detected",
+                        debugMatchInfo = matchResult.debugInfo
                     )
                 }
             }
@@ -178,6 +211,20 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
                 currentSign = "No hand detected",
                 confidence = 0f,
                 simulatedLandmarks = emptyList()
+            )
+        }
+    }
+
+    fun resetState() {
+        recentFrames.clear()
+        lastAddedSign = ""
+        _uiState.update {
+            it.copy(
+                currentSign = "No hand detected",
+                confidence = 0f,
+                simulatedLandmarks = emptyList(),
+                statusMessage = "No hand detected",
+                debugMatchInfo = ""
             )
         }
     }

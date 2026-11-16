@@ -1,6 +1,7 @@
 package com.example.system_mini_capstone.translator
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
@@ -24,18 +25,21 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * CameraX and MediaPipe Vision Pipeline Helper.
- * Configures CameraX ImageAnalysis to stream frame buffers continuously without lagging the UI thread
- * and pipes live frames into Google MediaPipe Vision HandLandmarker using saved System Config thresholds.
+ * CameraX and MediaPipe Vision Pipeline Helper supporting front/back camera switching,
+ * dynamic mirroring, and saved lens facing persistence.
  */
 class HandLandmarkerHelper(
     private val context: Context,
     private val onLandmarksDetected: (List<HandLandmark>) -> Unit,
+    private val onCameraSwitched: () -> Unit = {},
     private val onError: (String) -> Unit = {}
 ) {
     private var handLandmarker: HandLandmarker? = null
     private var backgroundExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
+    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private var currentLensFacing: Int = prefs.getInt(KEY_LENS_FACING, CameraSelector.LENS_FACING_FRONT)
+    private var isSwitching = false
 
     init {
         setupHandLandmarker()
@@ -66,11 +70,87 @@ class HandLandmarkerHelper(
                 .build()
 
             handLandmarker = HandLandmarker.createFromOptions(context, options)
-            Log.i(TAG, "MediaPipe HandLandmarker initialized successfully with saved system config thresholds")
+            Log.i(TAG, "MediaPipe HandLandmarker initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MediaPipe HandLandmarker: ${e.message}", e)
             onError("Failed to load hand model: ${e.message}")
             handLandmarker = null
+        }
+    }
+
+    fun isMirrored(): Boolean = isMirrored(currentLensFacing)
+
+    fun hasMultipleCameras(): Boolean {
+        val provider = cameraProvider ?: try { ProcessCameraProvider.getInstance(context).get() } catch (_: Exception) { return false }
+        val hasFront = provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
+        val hasBack = provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
+        return hasFront && hasBack
+    }
+
+    fun switchCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
+        if (isSwitching) return
+        isSwitching = true
+
+        val provider = cameraProvider
+        if (provider == null) {
+            isSwitching = false
+            return
+        }
+
+        val targetLensFacing = if (currentLensFacing == CameraSelector.LENS_FACING_FRONT) {
+            CameraSelector.LENS_FACING_BACK
+        } else {
+            CameraSelector.LENS_FACING_FRONT
+        }
+
+        val targetSelector = CameraSelector.Builder().requireLensFacing(targetLensFacing).build()
+        if (!provider.hasCamera(targetSelector)) {
+            isSwitching = false
+            onError("Selected camera not available on this device.")
+            return
+        }
+
+        currentLensFacing = targetLensFacing
+        prefs.edit().putInt(KEY_LENS_FACING, currentLensFacing).apply()
+
+        try {
+            provider.unbindAll()
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(backgroundExecutor) { imageProxy ->
+                        analyzeImage(imageProxy)
+                    }
+                }
+
+            provider.bindToLifecycle(lifecycleOwner, targetSelector, preview, imageAnalysis)
+            onCameraSwitched()
+            Log.i(TAG, "Switched camera successfully to lens facing: $currentLensFacing")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to switch camera, falling back: ${e.message}", e)
+            currentLensFacing = if (targetLensFacing == CameraSelector.LENS_FACING_FRONT) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
+            prefs.edit().putInt(KEY_LENS_FACING, currentLensFacing).apply()
+            val fallbackSelector = CameraSelector.Builder().requireLensFacing(currentLensFacing).build()
+            try {
+                provider.unbindAll()
+                val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                    .build()
+                    .also { analysis -> analysis.setAnalyzer(backgroundExecutor) { proxy -> analyzeImage(proxy) } }
+                provider.bindToLifecycle(lifecycleOwner, fallbackSelector, preview, imageAnalysis)
+                onError("Failed to start chosen camera. Switched back.")
+            } catch (_: Exception) {
+                onError("Camera failed to start.")
+            }
+        } finally {
+            isSwitching = false
         }
     }
 
@@ -97,27 +177,29 @@ class HandLandmarkerHelper(
                         }
                     }
 
-                val cameraSelector = when {
-                    cameraProvider?.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) == true -> {
-                        CameraSelector.DEFAULT_FRONT_CAMERA
-                    }
-                    cameraProvider?.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) == true -> {
-                        CameraSelector.DEFAULT_BACK_CAMERA
-                    }
-                    else -> {
-                        onError("No camera available on device")
-                        return@addListener
-                    }
+                val selectorBuilder = CameraSelector.Builder().requireLensFacing(currentLensFacing)
+                val cameraSelector = try {
+                    selectorBuilder.build()
+                } catch (_: Exception) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                }
+
+                val finalSelector = if (cameraProvider?.hasCamera(cameraSelector) == true) {
+                    cameraSelector
+                } else {
+                    currentLensFacing = CameraSelector.LENS_FACING_FRONT
+                    prefs.edit().putInt(KEY_LENS_FACING, currentLensFacing).apply()
+                    CameraSelector.DEFAULT_FRONT_CAMERA
                 }
 
                 cameraProvider?.unbindAll()
                 cameraProvider?.bindToLifecycle(
                     lifecycleOwner,
-                    cameraSelector,
+                    finalSelector,
                     preview,
                     imageAnalysis
                 )
-                Log.i(TAG, "CameraX use cases bound successfully")
+                Log.i(TAG, "CameraX use cases bound successfully with lens facing: $currentLensFacing")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to bind CameraX use cases: ${e.message}", e)
                 onError("Camera in use or unavailable. Tap 'Try again'.")
@@ -137,8 +219,8 @@ class HandLandmarkerHelper(
             if (bitmap != null) {
                 val rotationDegrees = imageProxy.imageInfo.rotationDegrees
                 val rotatedBitmap = rotateBitmap(bitmap, rotationDegrees.toFloat())
-                val isFrontCamera = cameraProvider?.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) == true
-                val finalBitmap = if (isFrontCamera) {
+                val mirrored = isMirrored()
+                val finalBitmap = if (mirrored) {
                     flipBitmap(rotatedBitmap)
                 } else {
                     rotatedBitmap
@@ -172,10 +254,13 @@ class HandLandmarkerHelper(
     private fun processLandmarkerResult(result: HandLandmarkerResult) {
         val landmarksList = mutableListOf<HandLandmark>()
         val landmarks = result.landmarks()
+        val mirrored = isMirrored()
+
         if (!landmarks.isNullOrEmpty()) {
             for (hand in landmarks) {
                 for (point in hand) {
-                    landmarksList.add(HandLandmark(point.x(), point.y(), point.z()))
+                    val px = if (mirrored) 1f - point.x() else point.x()
+                    landmarksList.add(HandLandmark(px, point.y(), point.z()))
                 }
             }
         }
@@ -195,5 +280,11 @@ class HandLandmarkerHelper(
 
     companion object {
         private const val TAG = "HandLandmarkerHelper"
+        private const val PREFS_NAME = "signlink_camera_prefs"
+        private const val KEY_LENS_FACING = "key_lens_facing"
+
+        fun isMirrored(lensFacing: Int): Boolean {
+            return lensFacing == CameraSelector.LENS_FACING_FRONT
+        }
     }
 }

@@ -1,11 +1,12 @@
 package com.example.system_mini_capstone.data.network
 
-import android.util.Base64
 import android.util.Log
+import com.example.system_mini_capstone.BuildConfig
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.nio.charset.StandardCharsets
 
 interface AuthRepository {
     suspend fun login(username: String, password: String): Result<AuthResponse>
@@ -17,63 +18,97 @@ class AuthRepositoryImpl(
     private val apiService: AuthApiService = NetworkModule.authApiService
 ) : AuthRepository {
 
+    private val firebaseAuth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
+    private val firestore: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
+
     override suspend fun login(username: String, password: String): Result<AuthResponse> =
         withContext(Dispatchers.IO) {
+            val email = username.trim()
+
+            // 1. Try Firebase Authentication first
             try {
-                val request = LoginRequest(username = username, password = password)
+                val authResult = firebaseAuth.signInWithEmailAndPassword(email, password).await()
+                val firebaseUser = authResult.user
+                if (firebaseUser != null) {
+                    val token = try { firebaseUser.getIdToken(false).await()?.token ?: "fb_token_${firebaseUser.uid}" } catch (_: Exception) { "fb_token_${firebaseUser.uid}" }
+
+                    // Fetch user role securely from Firestore
+                    var role = "USER"
+                    try {
+                        val doc = firestore.collection("users").document(firebaseUser.uid).get().await()
+                        if (doc.exists()) {
+                            val fetchedRole = doc.getString("role")
+                            if (fetchedRole.equals("ADMIN", ignoreCase = true)) {
+                                role = "ADMIN"
+                            }
+                        } else {
+                            // Document missing: create default USER document
+                            val newDoc = mapOf(
+                                "uid" to firebaseUser.uid,
+                                "displayName" to (firebaseUser.displayName ?: email.substringBefore("@")),
+                                "email" to email,
+                                "role" to "USER",
+                                "createdAt" to System.currentTimeMillis()
+                            )
+                            firestore.collection("users").document(firebaseUser.uid).set(newDoc)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Firestore role read failed (${e.message}), defaulting to USER", e)
+                        role = "USER"
+                    }
+
+                    val userDto = UserDto(
+                        id = firebaseUser.uid,
+                        email = email,
+                        username = firebaseUser.displayName ?: email.substringBefore("@"),
+                        role = role
+                    )
+                    val response = AuthResponse(
+                        accessToken = token,
+                        refreshToken = null,
+                        user = userDto
+                    )
+                    return@withContext Result.success(response)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Firebase Auth failed (${e.message}). Checking offline test credentials / API endpoint.")
+                if (e is com.google.firebase.auth.FirebaseAuthException) {
+                    val mappedErr = AuthErrorMapper.mapError(e)
+                    if (!BuildConfig.DEBUG) {
+                        return@withContext Result.failure(Exception(mappedErr))
+                    }
+                }
+            }
+
+            // 2. Try REST API endpoint if configured
+            try {
+                val request = LoginRequest(username = email, password = password)
                 val response = apiService.login(request)
 
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    if (body != null) {
-                        Result.success(body)
-                    } else {
-                        Result.failure(Exception("Empty authentication response from server."))
-                    }
-                } else {
-                    val errorMsg = when (response.code()) {
-                        401 -> "Invalid username or password. Please verify your credentials."
-                        403 -> "Access forbidden: Account suspended or unauthorized role."
-                        404 -> "Authentication endpoint not found on server."
-                        500 -> "Remote server error. Please try again later."
-                        else -> "Authentication failed with status code ${response.code()}."
-                    }
-                    Result.failure(Exception(errorMsg))
+                if (response.isSuccessful && response.body() != null) {
+                    return@withContext Result.success(response.body()!!)
                 }
-            } catch (e: IOException) {
-                Log.w(TAG, "Backend unreachable (${e.message}). Checking development test credentials.", e)
-                handleOfflineFallback(username, password, e)
             } catch (e: Exception) {
-                Log.e(TAG, "Unexpected error during login", e)
-                Result.failure(Exception("Authentication error: ${e.localizedMessage ?: "Unknown error"}"))
+                Log.w(TAG, "REST API login failed (${e.message}).")
             }
+
+            // 3. Fallback to offline test credentials (ONLY in DEBUG mode)
+            handleOfflineFallback(email, password)
         }
 
     override suspend fun requestPasswordReset(email: String): Result<ForgotPasswordResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.forgotPassword(ForgotPasswordRequest(email = email))
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    val errorMsg = when (response.code()) {
-                        404 -> "No account found associated with $email."
-                        else -> "Password recovery request failed (Code: ${response.code()})."
-                    }
-                    Result.failure(Exception(errorMsg))
-                }
-            } catch (e: IOException) {
-                Log.w(TAG, "Backend unreachable. Providing development password recovery response.", e)
-                // Dev fallback: generate simulation code
+                firebaseAuth.sendPasswordResetEmail(email.trim()).await()
                 Result.success(
                     ForgotPasswordResponse(
-                        message = "A password reset code has been sent to $email.",
-                        resetToken = "SIGN-7294"
+                        message = "A password reset email has been sent to ${email.trim()}.",
+                        resetToken = "FIREBASE-SENT"
                     )
                 )
             } catch (e: Exception) {
-                Log.e(TAG, "Error initiating password reset", e)
-                Result.failure(Exception(e.localizedMessage ?: "Unable to initiate password reset."))
+                val friendlyMessage = AuthErrorMapper.mapError(e)
+                Result.failure(Exception(friendlyMessage))
             }
         }
 
@@ -84,83 +119,50 @@ class AuthRepositoryImpl(
     ): Result<ResetPasswordResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val request = ResetPasswordRequest(
-                    email = email,
-                    token = token,
-                    newPassword = newPassword
-                )
-                val response = apiService.resetPassword(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    val errorMsg = when (response.code()) {
-                        400 -> "Invalid or expired reset token. Please request a new one."
-                        else -> "Failed to reset password (Code: ${response.code()})."
-                    }
-                    Result.failure(Exception(errorMsg))
-                }
-            } catch (e: IOException) {
-                Log.w(TAG, "Backend unreachable. Providing development password reset success.", e)
-                // Dev fallback: succeed
                 Result.success(
                     ResetPasswordResponse(
-                        message = "Your password has been successfully updated!",
+                        message = "Please check your inbox and follow the link sent to your email to complete password reset.",
                         success = true
                     )
                 )
             } catch (e: Exception) {
-                Log.e(TAG, "Error resetting password", e)
-                Result.failure(Exception(e.localizedMessage ?: "Password reset failed."))
+                val friendlyMessage = AuthErrorMapper.mapError(e)
+                Result.failure(Exception(friendlyMessage))
             }
         }
 
-    /**
-     * Development fallback to allow seamless offline verification of USER and ADMIN roles
-     * when the remote backend is not running locally.
-     */
-    private fun handleOfflineFallback(username: String, password: String, originalException: IOException): Result<AuthResponse> {
+    private fun handleOfflineFallback(username: String, password: String): Result<AuthResponse> {
         val trimmedUser = username.trim()
 
+        if (!BuildConfig.DEBUG) {
+            return Result.failure(Exception("Incorrect email or password."))
+        }
+
         return when {
-            // ADMIN role credential
             trimmedUser.equals("admin@signlink.app", ignoreCase = true) && password == "admin123" -> {
                 Log.i(TAG, "Authenticated successfully as ADMIN via dev fallback")
                 Result.success(createDevAuthResponse(trimmedUser, UserRole.ADMIN))
             }
-            // Standard USER role credential
             trimmedUser.equals("user@signlink.app", ignoreCase = true) && password == "user123" -> {
                 Log.i(TAG, "Authenticated successfully as USER via dev fallback")
                 Result.success(createDevAuthResponse(trimmedUser, UserRole.USER))
             }
-            // Any other credentials while backend is unreachable
             else -> {
-                Result.failure(
-                    Exception(
-                        "Unable to connect to authentication server (${originalException.localizedMessage ?: "Network offline"}). " +
-                        "For offline testing, use 'admin@signlink.app' / 'admin123' or 'user@signlink.app' / 'user123'."
-                    )
-                )
+                Result.failure(Exception("Incorrect email or password."))
             }
         }
     }
 
     private fun createDevAuthResponse(email: String, role: UserRole): AuthResponse {
-        val expSeconds = (System.currentTimeMillis() / 1000) + 86400 // 24 hours
-        val header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" // {"alg":"HS256","typ":"JWT"}
+        val expSeconds = (System.currentTimeMillis() / 1000) + 86400
+        val header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
         val payload = """{"sub":"$email","role":"${role.name}","exp":$expSeconds}"""
-        val payloadEncoded = Base64.encodeToString(
-            payload.toByteArray(StandardCharsets.UTF_8),
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
-        )
-        val token = "$header.$payloadEncoded.dev_signature_token"
+        val devJwt = "$header.${android.util.Base64.encodeToString(payload.toByteArray(java.nio.charset.StandardCharsets.UTF_8), android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)}.dev_signature"
 
         return AuthResponse(
-            accessToken = token,
-            refreshToken = "refresh_$token",
-            tokenType = "Bearer",
-            expiresIn = 86400,
+            accessToken = devJwt,
             user = UserDto(
-                id = if (role == UserRole.ADMIN) "usr_admin_001" else "usr_user_002",
+                id = if (role == UserRole.ADMIN) "usr_admin_001" else "usr_student_002",
                 email = email,
                 username = email.substringBefore("@"),
                 role = role.name
@@ -169,6 +171,6 @@ class AuthRepositoryImpl(
     }
 
     companion object {
-        private const val TAG = "AuthRepository"
+        private const val TAG = "AuthRepositoryImpl"
     }
 }

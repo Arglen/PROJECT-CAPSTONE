@@ -44,12 +44,48 @@ class SessionManager(context: Context) {
             putString(KEY_AUTH_TOKEN, response.accessToken)
             putString(KEY_REFRESH_TOKEN, response.refreshToken)
             response.user?.let { user ->
-                putString(KEY_USER_ROLE, user.role)
+                putString(KEY_USER_ROLE, if (user.role.equals("ADMIN", ignoreCase = true)) "ADMIN" else "USER")
                 putString(KEY_USER_EMAIL, user.email)
                 putString(KEY_USERNAME, user.username)
             }
             apply()
         }
+    }
+
+    /**
+     * Persists a direct user session (e.g. from Firebase Auth).
+     */
+    fun saveUserSession(uid: String, email: String, displayName: String, role: String) {
+        sharedPreferences.edit().apply {
+            putString(KEY_AUTH_TOKEN, "fb_token_$uid")
+            remove(KEY_REFRESH_TOKEN)
+            putString(KEY_USER_ROLE, if (role.equals("ADMIN", ignoreCase = true)) "ADMIN" else "USER")
+            putString(KEY_USER_EMAIL, email)
+            putString(KEY_USERNAME, displayName)
+            apply()
+        }
+    }
+
+    /**
+     * Persists a local Guest mode session with no auth token.
+     */
+    fun saveGuestSession() {
+        sharedPreferences.edit().apply {
+            remove(KEY_AUTH_TOKEN)
+            remove(KEY_REFRESH_TOKEN)
+            putString(KEY_USER_ROLE, "GUEST")
+            putString(KEY_USER_EMAIL, "guest@signlink.app")
+            putString(KEY_USERNAME, "Guest")
+            apply()
+        }
+    }
+
+    /**
+     * Updates the stored user role safely.
+     */
+    fun saveUserRole(role: String) {
+        val safeRole = if (role.equals("ADMIN", ignoreCase = true)) "ADMIN" else if (role.equals("GUEST", ignoreCase = true)) "GUEST" else "USER"
+        sharedPreferences.edit().putString(KEY_USER_ROLE, safeRole).apply()
     }
 
     /**
@@ -76,10 +112,11 @@ class SessionManager(context: Context) {
     }
 
     /**
-     * Retrieves the role assigned to the authenticated user ("USER" or "ADMIN").
+     * Retrieves the role assigned to the authenticated user ("USER", "ADMIN", or "GUEST").
      */
     fun getUserRole(): String {
-        return sharedPreferences.getString(KEY_USER_ROLE, "USER") ?: "USER"
+        val role = sharedPreferences.getString(KEY_USER_ROLE, "USER") ?: "USER"
+        return if (role.equals("ADMIN", ignoreCase = true)) "ADMIN" else if (role.equals("GUEST", ignoreCase = true)) "GUEST" else "USER"
     }
 
     /**
@@ -97,10 +134,11 @@ class SessionManager(context: Context) {
     }
 
     /**
-     * Checks if a valid authentication token exists and has not expired.
-     * Supports JWT validation by decoding the exp claim, or fallback presence check.
+     * Checks if a valid authentication token or Guest session exists and has not expired.
      */
     fun isSessionValid(): Boolean {
+        if (getUserRole() == "GUEST") return true
+
         val token = getAuthToken() ?: return false
         if (token.isBlank()) return false
 

@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,15 +18,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.example.system_mini_capstone.BuildConfig
 import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 
 class TranslatorActivity : ComponentActivity() {
@@ -67,6 +66,7 @@ class TranslatorActivity : ComponentActivity() {
                         ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                     )
                 }
+                val hasMultipleCameras = landmarkerHelper?.hasMultipleCameras() == true
 
                 if (showClearDialog) {
                     AlertDialog(
@@ -92,12 +92,17 @@ class TranslatorActivity : ComponentActivity() {
                 TranslatorScreen(
                     uiState = uiState,
                     hasCameraPermission = hasCameraPermission,
+                    hasMultipleCameras = hasMultipleCameras,
                     errorMessage = errorMessage,
+                    isMirrored = landmarkerHelper?.isMirrored() == true,
                     onBack = { finish() },
                     onToggleTts = viewModel::toggleTts,
                     onToggleSkeleton = viewModel::toggleSkeleton,
                     onToggleRecognition = viewModel::toggleRecognition,
                     onClearHistory = { showClearDialog = true },
+                    onSwitchCamera = {
+                        previewViewRef?.let { landmarkerHelper?.switchCamera(this, it) }
+                    },
                     onRequestPermission = {
                         requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     },
@@ -118,6 +123,9 @@ class TranslatorActivity : ComponentActivity() {
                                 context = applicationContext,
                                 onLandmarksDetected = { landmarks ->
                                     viewModel.processLandmarks(landmarks)
+                                },
+                                onCameraSwitched = {
+                                    viewModel.resetState()
                                 },
                                 onError = { err ->
                                     errorMessage = err
@@ -152,12 +160,15 @@ class TranslatorActivity : ComponentActivity() {
 fun TranslatorScreen(
     uiState: TranslatorUiState,
     hasCameraPermission: Boolean,
+    hasMultipleCameras: Boolean,
     errorMessage: String?,
+    isMirrored: Boolean,
     onBack: () -> Unit,
     onToggleTts: (Boolean) -> Unit,
     onToggleSkeleton: (Boolean) -> Unit,
     onToggleRecognition: (Boolean) -> Unit,
     onClearHistory: () -> Unit,
+    onSwitchCamera: () -> Unit,
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit,
     onTryAgain: () -> Unit,
@@ -246,71 +257,91 @@ fun TranslatorScreen(
                     }
                 }
 
-                // Truthful Status Indicator Overlay (Top Start)
+                // Truthful Status Indicator & Sample Status Overlay (Top Start)
                 Box(
                     modifier = Modifier.fillMaxSize().padding(12.dp),
                     contentAlignment = Alignment.TopStart
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
                             modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (uiState.statusMessage.contains("Hand detected")) Color.Green else Color.Yellow)
-                        )
-                        Text(
-                            text = uiState.statusMessage.uppercase(),
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Landmark Skeleton Overlay Canvas
-                if (uiState.isDrawSkeletonEnabled && hasCameraPermission && errorMessage == null) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val landmarks = uiState.simulatedLandmarks
-                        if (landmarks.size >= 21) {
-                            val w = size.width
-                            val h = size.height
-
-                            val connections = listOf(
-                                0 to 1, 1 to 2, 2 to 3, 3 to 4,       // Thumb
-                                0 to 5, 5 to 6, 6 to 7, 7 to 8,       // Index
-                                5 to 9, 9 to 10, 10 to 11, 11 to 12,  // Middle
-                                9 to 13, 13 to 14, 14 to 15, 15 to 16,// Ring
-                                13 to 17, 17 to 18, 18 to 19, 19 to 20, // Pinky
-                                0 to 17                               // Palm base
+                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(if (uiState.statusMessage.contains("Hand detected")) Color.Green else Color.Yellow)
                             )
+                            Text(
+                                text = uiState.statusMessage.uppercase(),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
 
-                            for (conn in connections) {
-                                val p1 = landmarks[conn.first]
-                                val p2 = landmarks[conn.second]
-                                drawLine(
+                        // Sample Load Status Badge
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.Black.copy(alpha = 0.5f)
+                        ) {
+                            Text(
+                                text = uiState.sampleLoadStatus,
+                                color = Color.LightGray,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Hidden Debug Line (DEBUG builds only)
+                        if (BuildConfig.DEBUG && uiState.debugMatchInfo.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color.Black.copy(alpha = 0.7f)
+                            ) {
+                                Text(
+                                    text = "DEBUG: ${uiState.debugMatchInfo}",
                                     color = Color.Green,
-                                    start = Offset(p1.x * w, p1.y * h),
-                                    end = Offset(p2.x * w, p2.y * h),
-                                    strokeWidth = 3f,
-                                    cap = StrokeCap.Round
-                                )
-                            }
-
-                            for (lm in landmarks) {
-                                drawCircle(
-                                    color = Color.Cyan,
-                                    radius = 6f,
-                                    center = Offset(lm.x * w, lm.y * h)
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                 )
                             }
                         }
                     }
+                }
+
+                // Switch Camera Button (Top Center)
+                if (hasMultipleCameras && hasCameraPermission && errorMessage == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(12.dp),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        IconButton(
+                            onClick = onSwitchCamera,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Cameraswitch,
+                                contentDescription = "Switch camera",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+
+                // Landmark Skeleton Overlay
+                if (uiState.isDrawSkeletonEnabled && hasCameraPermission && errorMessage == null) {
+                    HandSkeletonOverlay(
+                        landmarks = uiState.simulatedLandmarks,
+                        isMirrored = isMirrored,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
 
                 // Real-Time Sign Text Overlay Badge (Positioned at Top-End)
@@ -320,136 +351,125 @@ fun TranslatorScreen(
                         .padding(12.dp),
                     contentAlignment = Alignment.TopEnd
                 ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.revertedColorAlpha(0.85f)),
-                        shape = RoundedCornerShape(8.dp)
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        tonalElevation = 4.dp
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                             horizontalAlignment = Alignment.End
                         ) {
                             Text(
-                                text = uiState.currentSign,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontSize = 16.sp,
+                                text = "TRANSLATED SIGN",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
                                 fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "${(uiState.confidence * 100).toInt()}%",
-                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
-                                fontSize = 11.sp
+                                text = uiState.currentSign,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
             }
 
-            // B2.6 Status Line under camera
-            Text(
-                text = if (hasCameraPermission && errorMessage == null) "Show your hand to the camera" else (errorMessage ?: "Camera permission required"),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-
-            // Accessibility & TTS Controls Row
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Accessibility & Speech Settings", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Auto-Vocalize (TTS) Output")
-                        Switch(
-                            checked = uiState.isTtsEnabled,
-                            onCheckedChange = onToggleTts
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Render Hand Skeleton Overlay")
-                        Switch(
-                            checked = uiState.isDrawSkeletonEnabled,
-                            onCheckedChange = onToggleSkeleton
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Real-Time Tracking Stream")
-                        Switch(
-                            checked = uiState.isRecognizing,
-                            onCheckedChange = onToggleRecognition
-                        )
-                    }
-                }
-            }
-
-            // Translation History Transcript
-            Text("Live Translation Transcript", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-
+            // Controls & Translation History Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             ) {
-                if (uiState.translationHistory.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No signs recognized yet. Point camera at sign gestures...", color = Color.Gray)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(uiState.translationHistory) { record ->
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            text = "Live Session History",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = uiState.isTtsEnabled,
+                                onClick = { onToggleTts(!uiState.isTtsEnabled) },
+                                label = { Text("TTS Audio") }
+                            )
+                            FilterChip(
+                                selected = uiState.isDrawSkeletonEnabled,
+                                onClick = { onToggleSkeleton(!uiState.isDrawSkeletonEnabled) },
+                                label = { Text("Bones") }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider()
+
+                    if (uiState.translationHistory.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Show your hand clearly to the camera\nto begin translation...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(uiState.translationHistory, key = { it.id }) { record ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    tonalElevation = 2.dp
                                 ) {
-                                    Column {
-                                        Text(
-                                            text = record.signText,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = record.signText,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = "Confidence: ${(record.confidence * 100).toInt()}%",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                         Text(
                                             text = record.timestamp,
-                                            fontSize = 11.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "${(record.confidence * 100).toInt()}%",
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.primary
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline
                                         )
                                     }
                                 }
@@ -460,8 +480,4 @@ fun TranslatorScreen(
             }
         }
     }
-}
-
-private fun Color.revertedColorAlpha(alpha: Float): Color {
-    return this.copy(alpha = alpha)
 }
