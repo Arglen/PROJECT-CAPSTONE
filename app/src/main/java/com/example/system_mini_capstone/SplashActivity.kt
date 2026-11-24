@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
  * Entry point activity of the application.
  * Utilizes androidx.core:core-splashscreen to eliminate white flashes and double splashes.
  */
-class SplashActivity : ComponentActivity() {
+class SplashActivity : SignLinkBaseActivity() {
 
     private val viewModel: SplashViewModel by viewModels()
 

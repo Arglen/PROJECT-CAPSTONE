@@ -70,7 +70,7 @@ import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 /**
  * Activity managing the multi-step Credential Recovery (Forgot Password) flow.
  */
-class ForgotPasswordActivity : ComponentActivity() {
+class ForgotPasswordActivity : SignLinkBaseActivity() {
 
     private val viewModel: ForgotPasswordViewModel by viewModels()
 

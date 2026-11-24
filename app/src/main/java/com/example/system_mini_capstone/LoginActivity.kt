@@ -34,7 +34,7 @@ import com.example.system_mini_capstone.ui.LoginUiState
 import com.example.system_mini_capstone.ui.LoginViewModel
 import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 
-class LoginActivity : ComponentActivity() {
+class LoginActivity : SignLinkBaseActivity() {
 
     private val viewModel: LoginViewModel by viewModels()
     private val sessionManager by lazy { SessionManager(this) }

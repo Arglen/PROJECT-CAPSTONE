@@ -82,6 +82,7 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:0.10.26")
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.core:core-splashscreen:1.2.0")
+    implementation("androidx.compose.ui:ui-text-google-fonts")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

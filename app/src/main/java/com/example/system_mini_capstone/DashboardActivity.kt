@@ -6,32 +6,44 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.system_mini_capstone.account.AccountActivity
+import com.example.system_mini_capstone.admin.AdminAnalyticsActivity
+import com.example.system_mini_capstone.admin.lcms.LessonListActivity
 import com.example.system_mini_capstone.data.network.UserRole
-import com.example.system_mini_capstone.ui.DashboardFeatureItem
-import com.example.system_mini_capstone.ui.DashboardNavTab
+import com.example.system_mini_capstone.dictionary.SavedActivity
+import com.example.system_mini_capstone.translator.TranslatorActivity
 import com.example.system_mini_capstone.ui.DashboardUiState
 import com.example.system_mini_capstone.ui.DashboardViewModel
+import com.example.system_mini_capstone.ui.components.SignLinkBottomBar
+import com.example.system_mini_capstone.ui.components.SignLinkTintedBanner
+import com.example.system_mini_capstone.ui.theme.SignLinkColors
 import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 
-/**
- * Central Dashboard activity serving as the main navigation hub.
- * Features dynamic Role-Based Access Control (RBAC) to display administrative
- * tools or standard user navigation panels according to verified login credentials.
- */
-class DashboardActivity : ComponentActivity() {
+class DashboardActivity : SignLinkBaseActivity() {
 
     private val viewModel: DashboardViewModel by viewModels()
 
@@ -53,44 +65,25 @@ class DashboardActivity : ComponentActivity() {
                 DashboardScreen(
                     uiState = uiState,
                     snackbarHostState = snackbarHostState,
-                    onSelectTab = { tab ->
-                        viewModel.selectTab(tab)
-                        if (tab == DashboardNavTab.ADMIN_PANEL) {
-                            startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.AdminAnalyticsActivity::class.java))
+                    onTabSelected = { index ->
+                        when (index) {
+                            0 -> {} // Home
+                            1 -> startActivity(Intent(this@DashboardActivity, TranslatorActivity::class.java))
+                            2 -> startActivity(Intent(this@DashboardActivity, LessonListActivity::class.java))
+                            3 -> startActivity(Intent(this@DashboardActivity, SavedActivity::class.java))
                         }
                     },
-                    onFeatureClick = { feature ->
-                        when (feature.id) {
-                            "realtime_translator" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.translator.TranslatorActivity::class.java))
-                            }
-                            "admin_model_telemetry" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.AdminAnalyticsActivity::class.java))
-                            }
-                            "admin_maintenance" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.MaintenanceActivity::class.java))
-                            }
-                            "admin_user_mgmt" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.UserManagementActivity::class.java))
-                            }
-                            "gesture_dictionary" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.lcms.LessonListActivity::class.java))
-                            }
-                            "sign_samples" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.studio.SignSamplesActivity::class.java))
-                            }
-                            "admin_gesture_studio", "tts_settings" -> {
-                                startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.SystemConfigActivity::class.java))
-                            }
-                            else -> {
-                                if (feature.isRestrictedToAdmin) {
-                                    startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.SystemConfigActivity::class.java))
-                                } else {
-                                    viewModel.triggerAction(feature.title)
-                                    Toast.makeText(this@DashboardActivity, "Opening ${feature.title}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
+                    onOpenTranslator = {
+                        startActivity(Intent(this@DashboardActivity, TranslatorActivity::class.java))
+                    },
+                    onOpenDictionary = {
+                        startActivity(Intent(this@DashboardActivity, LessonListActivity::class.java))
+                    },
+                    onOpenAdminConsole = {
+                        startActivity(Intent(this@DashboardActivity, AdminAnalyticsActivity::class.java))
+                    },
+                    onOpenAccount = {
+                        startActivity(Intent(this@DashboardActivity, AccountActivity::class.java))
                     },
                     onCreateAccountClick = {
                         startActivity(Intent(this@DashboardActivity, RegisterActivity::class.java))
@@ -120,8 +113,11 @@ class DashboardActivity : ComponentActivity() {
 fun DashboardScreen(
     uiState: DashboardUiState,
     snackbarHostState: SnackbarHostState,
-    onSelectTab: (DashboardNavTab) -> Unit,
-    onFeatureClick: (DashboardFeatureItem) -> Unit,
+    onTabSelected: (Int) -> Unit,
+    onOpenTranslator: () -> Unit,
+    onOpenDictionary: () -> Unit,
+    onOpenAdminConsole: () -> Unit,
+    onOpenAccount: () -> Unit,
     onCreateAccountClick: () -> Unit,
     onPromptLogout: () -> Unit,
     onDismissLogout: () -> Unit,
@@ -153,354 +149,386 @@ fun DashboardScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("SignLink Hub", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier
-                            .padding(start = 12.dp)
-                            .size(36.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = if (isAdmin) "🛡️" else if (isGuest) "👤" else "🤟",
-                                fontSize = 18.sp
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onPromptLogout) {
-                        Text("🚪", fontSize = 20.sp)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = uiState.activeTab == DashboardNavTab.OVERVIEW,
-                    onClick = { onSelectTab(DashboardNavTab.OVERVIEW) },
-                    icon = { Text("🏠", fontSize = 20.sp) },
-                    label = { Text("Hub") }
-                )
-                NavigationBarItem(
-                    selected = uiState.activeTab == DashboardNavTab.TRANSLATOR,
-                    onClick = { onSelectTab(DashboardNavTab.TRANSLATOR) },
-                    icon = { Text("🤟", fontSize = 20.sp) },
-                    label = { Text("Translator") }
-                )
-                if (isAdmin) {
-                    NavigationBarItem(
-                        selected = uiState.activeTab == DashboardNavTab.ADMIN_PANEL,
-                        onClick = { onSelectTab(DashboardNavTab.ADMIN_PANEL) },
-                        icon = { Text("🛡️", fontSize = 20.sp) },
-                        label = { Text("Admin") }
-                    )
-                }
-            }
+            SignLinkBottomBar(
+                selectedIndex = 0, // Home
+                onTabSelected = onTabSelected
+            )
         }
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .background(SignLinkColors.background),
+            contentPadding = PaddingValues(
+                start = 24.dp,
+                end = 24.dp,
+                top = 24.dp,
+                bottom = innerPadding.calculateBottomPadding() + 24.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Welcome Header Card
+            // Header Row
             item {
-                UserHeaderCard(uiState = uiState, isAdmin = isAdmin)
-            }
-
-            // Role Banner
-            item {
-                when {
-                    isAdmin -> AdminPrivilegesBanner()
-                    isGuest -> GuestBanner(onCreateAccountClick = onCreateAccountClick)
-                    else -> UserWelcomeBanner()
-                }
-            }
-
-            // Section Header
-            item {
-                Text(
-                    text = if (isAdmin) "Authorized Modules (RBAC: Full Access)" else "Available Modules (Standard Access)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            // Feature List (Filtered by RBAC)
-            val displayedFeatures = when (uiState.activeTab) {
-                DashboardNavTab.OVERVIEW -> uiState.accessibleFeatures
-                DashboardNavTab.TRANSLATOR -> uiState.accessibleFeatures.filter { it.id == "realtime_translator" || it.id == "gesture_dictionary" }
-                DashboardNavTab.ADMIN_PANEL -> uiState.accessibleFeatures.filter { it.isRestrictedToAdmin }
-                DashboardNavTab.SETTINGS -> uiState.accessibleFeatures
-            }
-
-            items(displayedFeatures, key = { it.id }) { feature ->
-                DashboardFeatureCard(
-                    feature = feature,
-                    onClick = { onFeatureClick(feature) }
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedButton(
-                    onClick = onPromptLogout,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (isGuest) "Exit Guest Mode" else "End Session & Sign Out")
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-    }
-}
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "YOUR DAILY CONNECTION",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = SignLinkColors.accentPurple,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Hello, ready to sign?",
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 28.sp,
+                            color = SignLinkColors.onBackground
+                        )
+                        Text(
+                            text = "A few minutes today. More confidence tomorrow.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SignLinkColors.secondaryText
+                        )
+                    }
 
-@Composable
-fun UserHeaderCard(
-    uiState: DashboardUiState,
-    isAdmin: Boolean
-) {
-    val isGuest = uiState.userRole == UserRole.GUEST
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(54.dp),
-                shape = CircleShape,
-                color = when {
-                    isAdmin -> MaterialTheme.colorScheme.errorContainer
-                    isGuest -> MaterialTheme.colorScheme.tertiaryContainer
-                    else -> MaterialTheme.colorScheme.primaryContainer
-                }
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(text = if (isAdmin) "🛡️" else if (isGuest) "👤" else "👤", fontSize = 26.sp)
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (isGuest) "Guest User" else "Hello, ${uiState.username}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = if (isGuest) "Guest Mode (Local Session)" else uiState.userEmail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Role: ${uiState.userRole.name}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun GuestBanner(onCreateAccountClick: () -> Unit) {
-    var isDismissed by remember { mutableStateOf(false) }
-    if (isDismissed) return
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "👤 Guest Mode Active",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-                TextButton(onClick = { isDismissed = true }) {
-                    Text("Dismiss", color = MaterialTheme.colorScheme.onTertiaryContainer)
-                }
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "You are using Guest mode. Create an account to save your progress.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = onCreateAccountClick,
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Create Account", fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun AdminPrivilegesBanner() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "🛡️ Administrative Console Active",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Role-based permissions granted: User account administration, custom gesture training studio, and ML model telemetry inspection.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-        }
-    }
-}
-
-@Composable
-fun UserWelcomeBanner() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "👋 Welcome to SignLink",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Point your camera to detect 21 hand landmarks and translate American Sign Language gestures directly into audible speech.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
-    }
-}
-
-@Composable
-fun DashboardFeatureCard(
-    feature: DashboardFeatureItem,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = if (feature.isRestrictedToAdmin) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
-                        else MaterialTheme.colorScheme.secondaryContainer
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(text = feature.iconEmoji, fontSize = 24.sp)
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = feature.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f, fill = false),
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                    if (feature.isRestrictedToAdmin) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.errorContainer
-                        ) {
-                            Text(
-                                text = "ADMIN",
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                maxLines = 1,
-                                softWrap = false
+                    // Profile / Account Button (44dp white rounded surface)
+                    Surface(
+                        onClick = onOpenAccount,
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = SignLinkColors.surface,
+                        border = BorderStroke(1.dp, SignLinkColors.outline),
+                        shadowElevation = 1.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Person,
+                                contentDescription = "Account",
+                                tint = SignLinkColors.onBackground
                             )
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(4.dp))
+            // Guest Mode Banner (if guest)
+            if (isGuest) {
+                item {
+                    SignLinkTintedBanner(
+                        text = "You are using Guest mode. Create an account to save your progress",
+                        containerColor = SignLinkColors.warningTint,
+                        contentColor = SignLinkColors.warningAmber,
+                        icon = {
+                            Button(
+                                onClick = onCreateAccountClick,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = SignLinkColors.warningAmber)
+                            ) {
+                                Text("Create account", fontSize = 12.sp)
+                            }
+                        }
+                    )
+                }
+            }
 
+            // Hero Card (#7C3AED, 24dp radius, ~208dp tall, 20dp padding)
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(208.dp)
+                        .shadow(elevation = 4.dp, shape = RoundedCornerShape(24.dp), clip = false),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = SignLinkColors.accentPurple)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "START WITH SOMETHING SIMPLE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    fontSize = 11.sp,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "A hello can open a conversation.",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 24.sp,
+                                    color = Color.White
+                                )
+                            }
+
+                            Button(
+                                onClick = onOpenTranslator,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = SignLinkColors.onBackground
+                                )
+                            ) {
+                                Text(
+                                    text = "Learn \"Hello\"",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+
+                        // Illustration Circle on right
+                        Box(
+                            modifier = Modifier
+                                .size(90.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "👋", fontSize = 42.sp)
+                        }
+                    }
+                }
+            }
+
+            // Section Title
+            item {
                 Text(
-                    text = feature.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    text = "Make it part of your day",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = SignLinkColors.onBackground
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            // Two White Cards (~92dp tall)
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    // Card 1: Camera practice
+                    Surface(
+                        onClick = onOpenTranslator,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(elevation = 2.dp, shape = RoundedCornerShape(24.dp), clip = false),
+                        shape = RoundedCornerShape(24.dp),
+                        color = SignLinkColors.surface
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                color = SignLinkColors.blueTint
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = SignLinkColors.primary
+                                    )
+                                }
+                            }
 
-            Text("→", fontSize = 20.sp, color = MaterialTheme.colorScheme.outline)
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "Camera practice",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = SignLinkColors.onBackground
+                                )
+                                Text(
+                                    text = "Practice with your camera",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = SignLinkColors.secondaryText
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = SignLinkColors.secondaryText
+                            )
+                        }
+                    }
+
+                    // Card 2: Everyday dictionary
+                    Surface(
+                        onClick = onOpenDictionary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(elevation = 2.dp, shape = RoundedCornerShape(24.dp), clip = false),
+                        shape = RoundedCornerShape(24.dp),
+                        color = SignLinkColors.surface
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(48.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                color = SignLinkColors.purpleTint
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                        contentDescription = null,
+                                        tint = SignLinkColors.accentPurple
+                                    )
+                                }
+                            }
+
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "Everyday dictionary",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = SignLinkColors.onBackground
+                                )
+                                Text(
+                                    text = "Explore 4 common signs",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = SignLinkColors.secondaryText
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = SignLinkColors.secondaryText
+                            )
+                        }
+                    }
+
+                    // ADMIN Card (Only for ADMIN role)
+                    if (isAdmin) {
+                        Surface(
+                            onClick = onOpenAdminConsole,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .shadow(elevation = 2.dp, shape = RoundedCornerShape(24.dp), clip = false),
+                            shape = RoundedCornerShape(24.dp),
+                            color = SignLinkColors.surface
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Surface(
+                                    modifier = Modifier.size(48.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = SignLinkColors.errorTint
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Shield,
+                                            contentDescription = null,
+                                            tint = SignLinkColors.error
+                                        )
+                                    }
+                                }
+
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "Admin console",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = SignLinkColors.onBackground
+                                    )
+                                    Text(
+                                        text = "Analytics, user management & maintenance",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SignLinkColors.secondaryText
+                                    )
+                                }
+
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = SignLinkColors.secondaryText
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Green Banner (tint #E7F5F1, 16dp radius)
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = SignLinkColors.successTint
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(36.dp),
+                            shape = CircleShape,
+                            color = SignLinkColors.successGreen.copy(alpha = 0.15f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = SignLinkColors.successGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "Small steps, real connections",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = SignLinkColors.successGreen
+                            )
+                            Text(
+                                text = "One sign at a time is a great start.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 12.sp,
+                                color = SignLinkColors.secondaryText
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
