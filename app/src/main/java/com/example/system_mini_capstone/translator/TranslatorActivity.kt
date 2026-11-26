@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
-import com.example.system_mini_capstone.SignLinkBaseActivity
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.example.system_mini_capstone.BuildConfig
 import com.example.system_mini_capstone.DashboardActivity
+import com.example.system_mini_capstone.SignLinkBaseActivity
 import com.example.system_mini_capstone.admin.lcms.LessonListActivity
 import com.example.system_mini_capstone.ui.components.SignLinkBackButton
 import com.example.system_mini_capstone.ui.components.SignLinkBottomBar
@@ -110,15 +111,15 @@ class TranslatorActivity : SignLinkBaseActivity() {
                     onTabSelected = { index ->
                         when (index) {
                             0 -> {
-                                startActivity(Intent(this@TranslatorActivity, DashboardActivity::class.java))
+                                startActivity(Intent(this, DashboardActivity::class.java))
                                 finish()
                             }
                             1 -> {} // Camera
                             2 -> {
-                                startActivity(Intent(this@TranslatorActivity, LessonListActivity::class.java))
+                                startActivity(Intent(this, LessonListActivity::class.java))
                                 finish()
                             }
-                            3 -> Toast.makeText(this@TranslatorActivity, "Saved signs coming in Stage F6", Toast.LENGTH_SHORT).show()
+                            3 -> Toast.makeText(this, "Saved signs coming in Stage F6", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onToggleTts = viewModel::toggleTts,
@@ -133,12 +134,6 @@ class TranslatorActivity : SignLinkBaseActivity() {
                     onRequestPermission = {
                         requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     },
-                    onOpenSettings = {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", packageName, null)
-                        }
-                        startActivity(intent)
-                    },
                     onTryAgain = {
                         errorMessage = null
                         previewViewRef?.let { bindCamera(it) }
@@ -148,8 +143,8 @@ class TranslatorActivity : SignLinkBaseActivity() {
                         if (landmarkerHelper == null) {
                             landmarkerHelper = HandLandmarkerHelper(
                                 context = applicationContext,
-                                onLandmarksDetected = { landmarks ->
-                                    viewModel.processLandmarks(landmarks)
+                                onHandsDetected = { hands ->
+                                    viewModel.processHands(hands, landmarkerHelper?.isMirrored() == true)
                                 },
                                 onCameraSwitched = {
                                     viewModel.resetState()
@@ -197,7 +192,6 @@ fun TranslatorScreen(
     onClearHistory: () -> Unit,
     onSwitchCamera: () -> Unit,
     onRequestPermission: () -> Unit,
-    onOpenSettings: () -> Unit,
     onTryAgain: () -> Unit,
     onPreviewViewCreated: (androidx.camera.view.PreviewView) -> Unit
 ) {
@@ -214,9 +208,13 @@ fun TranslatorScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SignLinkColors.background)
-                .padding(innerPadding),
-            contentPadding = PaddingValues(24.dp),
+                .background(SignLinkColors.background),
+            contentPadding = PaddingValues(
+                start = 24.dp,
+                end = 24.dp,
+                top = 24.dp,
+                bottom = innerPadding.calculateBottomPadding() + 24.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Header: Back button, Title & Subtitle
@@ -304,54 +302,74 @@ fun TranslatorScreen(
                                     textAlign = TextAlign.Center
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
-                                if (!hasCameraPermission) {
-                                    Button(
-                                        onClick = onRequestPermission,
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = SignLinkColors.primary)
-                                    ) {
-                                        Text("Grant Permission")
-                                    }
-                                } else {
-                                    Button(
-                                        onClick = onTryAgain,
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = SignLinkColors.primary)
-                                    ) {
-                                        Text("Try Again")
-                                    }
+                                Button(
+                                    onClick = onTryAgain,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = SignLinkColors.primary)
+                                ) {
+                                    Text("Try Again")
                                 }
                             }
                         }
                     }
 
-                    // Landmark Skeleton Overlay
+                    // Landmark Skeleton Overlay for Multiple Hands
                     if (uiState.isDrawSkeletonEnabled && hasCameraPermission && errorMessage == null) {
                         HandSkeletonOverlay(
-                            landmarks = uiState.simulatedLandmarks,
+                            hands = uiState.simulatedHands,
                             isMirrored = isMirrored,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
 
-                    // LIVE / CAMERA OFF pill (Top Left)
+                    // LIVE / CAMERA OFF pill (Top Start)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(16.dp),
                         contentAlignment = Alignment.TopStart
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.Black.copy(alpha = 0.5f)
-                        ) {
-                            Text(
-                                text = if (isRunning) "LIVE" else "CAMERA OFF",
-                                color = if (isRunning) Color.Green else Color.Yellow,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.Black.copy(alpha = 0.5f)
+                            ) {
+                                Text(
+                                    text = if (isRunning) "LIVE" else "CAMERA OFF",
+                                    color = if (isRunning) Color.Green else Color.Yellow,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            // Sample Load Status Badge
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color.Black.copy(alpha = 0.5f)
+                            ) {
+                                Text(
+                                    text = uiState.sampleLoadStatus,
+                                    color = Color.LightGray,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            // DEBUG-only line showing raw label, logical label, score, and active lens
+                            if (BuildConfig.DEBUG && uiState.debugMatchInfo.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color.Black.copy(alpha = 0.75f)
+                                ) {
+                                    Text(
+                                        text = "DBG (${if (isMirrored) "FRONT" else "BACK"}): ${uiState.debugMatchInfo}",
+                                        color = Color.Green,
+                                        fontSize = 9.sp,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -440,6 +458,27 @@ fun TranslatorScreen(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Left & Right hand recognition breakdown lines
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        Text(
+                            text = "Left: ${uiState.leftSign}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF246BFD)
+                        )
+                        Text(
+                            text = "Right: ${uiState.rightSign}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF0F8A6D)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 

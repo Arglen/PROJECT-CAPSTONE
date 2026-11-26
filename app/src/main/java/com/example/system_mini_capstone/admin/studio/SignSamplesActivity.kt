@@ -37,6 +37,7 @@ import com.example.system_mini_capstone.DashboardActivity
 import com.example.system_mini_capstone.data.SessionManager
 import com.example.system_mini_capstone.translator.HandLandmarkerHelper
 import com.example.system_mini_capstone.translator.HandSkeletonOverlay
+import com.example.system_mini_capstone.ui.theme.SignLinkColors
 import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 
 class SignSamplesActivity : ComponentActivity() {
@@ -141,8 +142,8 @@ class SignSamplesActivity : ComponentActivity() {
                         if (landmarkerHelper == null) {
                             landmarkerHelper = HandLandmarkerHelper(
                                 context = applicationContext,
-                                onLandmarksDetected = { landmarks ->
-                                    viewModel.onLandmarksReceived(landmarks)
+                                onHandsDetected = { hands ->
+                                    viewModel.onHandsReceived(hands)
                                 },
                                 onError = { err ->
                                     errorMessage = err
@@ -213,7 +214,7 @@ fun SignSamplesScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background)
+                .background(SignLinkColors.background)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -259,7 +260,7 @@ fun SignSamplesScreen(
                     // Landmark Skeleton Overlay
                     if (hasCameraPermission && errorMessage == null) {
                         HandSkeletonOverlay(
-                            landmarks = uiState.simulatedLandmarks,
+                            hands = uiState.simulatedHands,
                             isMirrored = isMirrored,
                             modifier = Modifier.fillMaxSize()
                         )

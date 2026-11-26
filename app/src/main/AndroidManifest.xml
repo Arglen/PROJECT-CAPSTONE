@@ -78,6 +78,11 @@
             android:theme="@style/Theme.System_mini_capstone" />
 
         <activity
+            android:name=".admin.AdminConsoleActivity"
+            android:exported="false"
+            android:theme="@style/Theme.System_mini_capstone" />
+
+        <activity
             android:name=".admin.lcms.LessonListActivity"
             android:exported="false"
             android:theme="@style/Theme.System_mini_capstone" />

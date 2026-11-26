@@ -5,21 +5,27 @@ import kotlin.math.sqrt
 
 /**
  * Normalizes 21 raw hand landmarks into 63 invariant float coordinates.
- * Convention:
- * 1. Subtract the wrist (landmark 0) from every landmark point (translation invariance).
- * 2. Divide all coordinates by the 3D Euclidean distance between wrist (0) and middle finger MCP (9) (scale invariance).
- * 3. If front camera is active, landmarks are pre-mirrored in HandLandmarkerHelper to match Translator preview convention.
+ * Canonical Form:
+ * 1. If handedness is Left, mirror x horizontally (x -> 1 - x) so left hand samples map to the same space as right hands.
+ * 2. Subtract the wrist (landmark 0) from every landmark point (translation invariance).
+ * 3. Divide all coordinates by the 3D Euclidean distance between wrist (0) and middle finger MCP (9) (scale invariance).
  */
 object SignSampleNormalizer {
 
-    fun normalize(landmarks: List<HandLandmark>): List<Float> {
+    fun normalize(landmarks: List<HandLandmark>, handedness: String = "Right"): List<Float> {
         if (landmarks.size < 21) return emptyList()
 
-        val wrist = landmarks[0]
-        val middleMcp = landmarks[9]
+        val isLeft = handedness.equals("Left", ignoreCase = true)
+        val adjustedLandmarks = if (isLeft) {
+            landmarks.map { lm -> HandLandmark(1f - lm.x, lm.y, lm.z) }
+        } else {
+            landmarks
+        }
+
+        val wrist = adjustedLandmarks[0]
 
         // 1. Translate relative to wrist (landmark 0)
-        val translated = landmarks.map { lm ->
+        val translated = adjustedLandmarks.map { lm ->
             Triple(lm.x - wrist.x, lm.y - wrist.y, lm.z - wrist.z)
         }
 

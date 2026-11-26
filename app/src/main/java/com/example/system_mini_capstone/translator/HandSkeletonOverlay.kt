@@ -6,27 +6,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import com.example.system_mini_capstone.ml.HandLandmark
+import com.example.system_mini_capstone.ml.HandResult
 import kotlin.math.max
 
 /**
- * Renders the 21-node MediaPipe hand skeleton over the camera preview,
- * compensating for PreviewView FILL_CENTER scale type (center crop) and lens mirroring.
+ * Renders 21-node MediaPipe hand skeletons for multiple detected hands over the camera preview,
+ * with distinguishable colors (Left hand Blue #246BFD, Right hand Green #0F8A6D) and wrist labels,
+ * compensating for PreviewView FILL_CENTER scale type and lens mirroring.
  */
 @Composable
 fun HandSkeletonOverlay(
-    landmarks: List<HandLandmark>,
+    hands: List<HandResult>,
     isMirrored: Boolean,
     modifier: Modifier = Modifier
 ) {
-    if (landmarks.size < 21) return
+    if (hands.isEmpty()) return
 
     Canvas(modifier = modifier) {
         val viewW = size.width
         val viewH = size.height
         if (viewW <= 0f || viewH <= 0f) return@Canvas
 
-        // Standard camera aspect ratio (portrait 9:16)
         val imgW = 720f
         val imgH = 1280f
 
@@ -49,37 +49,46 @@ fun HandSkeletonOverlay(
             0 to 17                               // Palm base
         )
 
-        for (conn in connections) {
-            val p1 = landmarks[conn.first]
-            val p2 = landmarks[conn.second]
+        for (hand in hands) {
+            val landmarks = hand.landmarks
+            if (landmarks.size < 21) continue
 
-            val x1 = if (isMirrored) (1f - p1.x) else p1.x
-            val x2 = if (isMirrored) (1f - p2.x) else p2.x
+            val isLeft = hand.handedness.equals("Left", ignoreCase = true)
+            val lineColor = if (isLeft) Color(0xFF246BFD) else Color(0xFF0F8A6D)
+            val jointColor = if (isLeft) Color(0xFF93C5FD) else Color(0xFF6EE7B7)
 
-            val screenX1 = x1 * scaledW + offsetX
-            val screenY1 = p1.y * scaledH + offsetY
-            val screenX2 = x2 * scaledW + offsetX
-            val screenY2 = p2.y * scaledH + offsetY
+            for (conn in connections) {
+                val p1 = landmarks[conn.first]
+                val p2 = landmarks[conn.second]
 
-            drawLine(
-                color = Color.Green,
-                start = Offset(screenX1, screenY1),
-                end = Offset(screenX2, screenY2),
-                strokeWidth = 3f,
-                cap = StrokeCap.Round
-            )
-        }
+                val x1 = if (isMirrored) (1f - p1.x) else p1.x
+                val x2 = if (isMirrored) (1f - p2.x) else p2.x
 
-        for (lm in landmarks) {
-            val x = if (isMirrored) (1f - lm.x) else lm.x
-            val screenX = x * scaledW + offsetX
-            val screenY = lm.y * scaledH + offsetY
+                val screenX1 = x1 * scaledW + offsetX
+                val screenY1 = p1.y * scaledH + offsetY
+                val screenX2 = x2 * scaledW + offsetX
+                val screenY2 = p2.y * scaledH + offsetY
 
-            drawCircle(
-                color = Color.Cyan,
-                radius = 6f,
-                center = Offset(screenX, screenY)
-            )
+                drawLine(
+                    color = lineColor,
+                    start = Offset(screenX1, screenY1),
+                    end = Offset(screenX2, screenY2),
+                    strokeWidth = 3.5f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            for (lm in landmarks) {
+                val x = if (isMirrored) (1f - lm.x) else lm.x
+                val screenX = x * scaledW + offsetX
+                val screenY = lm.y * scaledH + offsetY
+
+                drawCircle(
+                    color = jointColor,
+                    radius = 5f,
+                    center = Offset(screenX, screenY)
+                )
+            }
         }
     }
 }

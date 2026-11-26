@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.system_mini_capstone.BuildConfig
 import com.example.system_mini_capstone.ml.HandLandmark
+import com.example.system_mini_capstone.ml.HandResult
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
@@ -46,7 +47,8 @@ data class SignSamplesUiState(
     val saveError: Boolean = false,
     val labelSummaries: List<LabelSummary> = emptyList(),
     val isLoadingSummaries: Boolean = false,
-    val simulatedLandmarks: List<HandLandmark> = emptyList()
+    val simulatedLandmarks: List<HandLandmark> = emptyList(),
+    val simulatedHands: List<HandResult> = emptyList()
 )
 
 class SignSamplesViewModel(application: Application) : AndroidViewModel(application) {
@@ -58,7 +60,9 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
     val uiState: StateFlow<SignSamplesUiState> = _uiState.asStateFlow()
 
     private val capturedBuffer = mutableListOf<List<Float>>()
+    private val capturedHandednessList = mutableListOf<String>()
     private var currentLandmarks: List<HandLandmark> = emptyList()
+    private var detectedHandResult: HandResult? = null
     private var isHandPresent = false
     private var isFrontLens = true
     private var recordingJob: kotlinx.coroutines.Job? = null
@@ -82,10 +86,42 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
         isFrontLens = isFront
     }
 
-    fun onLandmarksReceived(landmarks: List<HandLandmark>) {
-        currentLandmarks = landmarks
-        isHandPresent = landmarks.size >= 21
-        _uiState.update { it.copy(simulatedLandmarks = landmarks) }
+    fun onHandsReceived(hands: List<HandResult>) {
+        if (hands.size == 1) {
+            val hand = hands.first()
+            detectedHandResult = hand
+            currentLandmarks = hand.landmarks
+            isHandPresent = true
+            _uiState.update {
+                it.copy(
+                    simulatedHands = hands,
+                    simulatedLandmarks = hand.landmarks,
+                    statusMessage = "${hand.handedness} hand detected"
+                )
+            }
+        } else if (hands.size > 1) {
+            detectedHandResult = null
+            currentLandmarks = emptyList()
+            isHandPresent = false
+            _uiState.update {
+                it.copy(
+                    simulatedHands = hands,
+                    simulatedLandmarks = emptyList(),
+                    statusMessage = "Show one hand to record"
+                )
+            }
+        } else {
+            detectedHandResult = null
+            currentLandmarks = emptyList()
+            isHandPresent = false
+            _uiState.update {
+                it.copy(
+                    simulatedHands = emptyList(),
+                    simulatedLandmarks = emptyList(),
+                    statusMessage = "No hand detected"
+                )
+            }
+        }
     }
 
     fun startRecording() {
@@ -98,6 +134,7 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
         if (_uiState.value.isRecording || _uiState.value.isCountingDown) return
 
         capturedBuffer.clear()
+        capturedHandednessList.clear()
         _uiState.update {
             it.copy(
                 isCountingDown = true,
@@ -124,14 +161,16 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
             }
 
             while (capturedBuffer.size < 40) {
-                if (isHandPresent && currentLandmarks.size >= 21) {
-                    val normalized = SignSampleNormalizer.normalize(currentLandmarks)
+                val hand = detectedHandResult
+                if (isHandPresent && hand != null && hand.landmarks.size >= 21) {
+                    val normalized = SignSampleNormalizer.normalize(hand.landmarks, hand.handedness)
                     if (normalized.size == 63) {
                         capturedBuffer.add(normalized)
-                        _uiState.update { it.copy(recordedCount = capturedBuffer.size, statusMessage = "Recording...") }
+                        capturedHandednessList.add(hand.handedness)
+                        _uiState.update { it.copy(recordedCount = capturedBuffer.size, statusMessage = "Recording ${hand.handedness} hand...") }
                     }
                 } else {
-                    _uiState.update { it.copy(statusMessage = "Show your hand...") }
+                    _uiState.update { it.copy(statusMessage = "Show one hand to record") }
                 }
                 delay(100)
             }
@@ -146,6 +185,7 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
         recordingJob?.cancel()
         recordingJob = null
         capturedBuffer.clear()
+        capturedHandednessList.clear()
         _uiState.update {
             it.copy(
                 isCountingDown = false,
@@ -165,11 +205,11 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
             val uid = currentUser?.uid ?: "admin_local"
             val lensStr = if (isFrontLens) "FRONT" else "BACK"
 
-            val dtos = capturedBuffer.map { floats ->
+            val dtos = capturedBuffer.mapIndexed { idx, floats ->
                 SignSampleDto(
                     label = label,
                     landmarks = floats,
-                    handedness = "Right",
+                    handedness = capturedHandednessList.getOrElse(idx) { "Right" },
                     lens = lensStr,
                     createdBy = uid
                 )
@@ -242,7 +282,6 @@ class SignSamplesViewModel(application: Application) : AndroidViewModel(applicat
             _uiState.update { it.copy(isLoadingSummaries = true) }
             try {
                 val localDtos = SignSampleLocalStore.loadLocal(getApplication())
-                val localLabels = localDtos.map { it.label }.toSet()
 
                 val cloudSnapshot = withTimeout(6000) {
                     firestore.collection("signSamples").get().await()

@@ -5,7 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.system_mini_capstone.admin.config.SystemConfigManager
 import com.example.system_mini_capstone.admin.studio.SignSampleNormalizer
-import com.example.system_mini_capstone.ml.HandLandmark
+import com.example.system_mini_capstone.ml.HandResult
 import com.example.system_mini_capstone.ml.SignClassifierEngine
 import com.example.system_mini_capstone.ml.SignMatcherEngine
 import com.example.system_mini_capstone.tts.TtsManager
@@ -25,12 +25,14 @@ data class TranslationRecord(
 data class TranslatorUiState(
     val currentSign: String = "No hand detected",
     val confidence: Float = 0f,
+    val leftSign: String = "-",
+    val rightSign: String = "-",
     val topPredictions: List<Pair<String, Float>> = emptyList(),
     val translationHistory: List<TranslationRecord> = emptyList(),
     val isTtsEnabled: Boolean = true,
     val isDrawSkeletonEnabled: Boolean = true,
     val isRecognizing: Boolean = true,
-    val simulatedLandmarks: List<HandLandmark> = emptyList(),
+    val simulatedHands: List<HandResult> = emptyList(),
     val statusMessage: String = "No hand detected",
     val sampleLoadStatus: String = "Loading signs...",
     val debugMatchInfo: String = ""
@@ -52,11 +54,13 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
     )
     val uiState: StateFlow<TranslatorUiState> = _uiState.asStateFlow()
 
-    // Sliding window parameters driven by saved System Config debounceFrameCount
+    // Separate sliding windows per hand (Left and Right)
     private val requiredStableFrames = systemConfig.gestureConfig.debounceFrameCount.coerceIn(1, 15)
     private val windowSize = requiredStableFrames + 4
-    private val recentFrames = mutableListOf<Pair<String, Float>>()
-    private var lastAddedSign: String = ""
+    private val leftFrames = mutableListOf<Pair<String, Float>>()
+    private val rightFrames = mutableListOf<Pair<String, Float>>()
+    private var lastAddedLeftSign: String = ""
+    private var lastAddedRightSign: String = ""
     private var lastHandSeenTimestamp: Long = System.currentTimeMillis()
 
     init {
@@ -68,21 +72,25 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun processLandmarks(landmarks: List<HandLandmark>) {
+    fun processHands(hands: List<HandResult>, isFrontCamera: Boolean) {
         if (!_uiState.value.isRecognizing) return
 
         val now = System.currentTimeMillis()
 
-        if (landmarks.isEmpty()) {
+        if (hands.isEmpty()) {
             if (now - lastHandSeenTimestamp >= 500) {
-                lastAddedSign = ""
+                lastAddedLeftSign = ""
+                lastAddedRightSign = ""
             }
-            recentFrames.clear()
+            leftFrames.clear()
+            rightFrames.clear()
             _uiState.update {
                 it.copy(
                     currentSign = "No hand detected",
                     confidence = 0f,
-                    simulatedLandmarks = emptyList(),
+                    leftSign = "-",
+                    rightSign = "-",
+                    simulatedHands = emptyList(),
                     statusMessage = "No hand detected",
                     debugMatchInfo = ""
                 )
@@ -92,93 +100,122 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
 
         lastHandSeenTimestamp = now
 
-        // Use first hand only if two hands are detected
-        val singleHand = if (landmarks.size >= 42) landmarks.take(21) else landmarks
-
         viewModelScope.launch {
-            // 1. Try k-NN Sign Matcher first using recorded sign samples
-            val normalized = SignSampleNormalizer.normalize(singleHand)
-            val matchResult = matcherEngine.match(normalized)
+            var leftDetected = "-"
+            var rightDetected = "-"
+            var leftConf = 0f
+            var rightConf = 0f
+            val debugBuilder = StringBuilder()
 
-            val detectedSign: String
-            val confidence: Float
+            for (hand in hands) {
+                val isLeftHand = hand.handedness.equals("Left", ignoreCase = true)
+                // Canonical form normalization (mirrors left hand x coords to match right hand space)
+                val normalized = SignSampleNormalizer.normalize(hand.landmarks, hand.handedness)
+                val matchResult = matcherEngine.match(normalized)
 
-            if (matchResult.label != "UNKNOWN") {
-                detectedSign = matchResult.label
-                confidence = matchResult.confidence
-            } else {
-                // 2. Fall back to heuristic classifier if no recorded samples match
-                val fallbackResult = classifierEngine.classifyGesture(singleHand)
-                detectedSign = fallbackResult.gestureName
-                confidence = fallbackResult.confidence
-            }
-
-            if (detectedSign != "UNKNOWN" && confidence >= 0.70f) {
-                recentFrames.add(Pair(detectedSign, confidence))
-                if (recentFrames.size > windowSize) {
-                    recentFrames.removeAt(0)
-                }
-            } else {
-                recentFrames.add(Pair("UNKNOWN", 0f))
-                if (recentFrames.size > windowSize) {
-                    recentFrames.removeAt(0)
-                }
-            }
-
-            val validFrames = recentFrames.filter { it.first != "UNKNOWN" }
-            val signCounts = validFrames.groupingBy { it.first }.eachCount()
-            val dominantEntry = signCounts.entries.maxByOrNull { it.value }
-
-            if (dominantEntry != null && dominantEntry.value >= requiredStableFrames) {
-                val stableSign = dominantEntry.key
-                val meanConf = validFrames.filter { it.first == stableSign }.map { it.second }.average().toFloat()
-
-                if (meanConf >= 0.70f) {
-                    _uiState.update { state ->
-                        val isNewGesture = lastAddedSign != stableSign
-                        val updatedHistory = if (isNewGesture) {
-                            listOf(TranslationRecord(signText = stableSign, confidence = meanConf)) + state.translationHistory.take(19)
-                        } else {
-                            state.translationHistory
-                        }
-
-                        if (isNewGesture) {
-                            lastAddedSign = stableSign
-                            if (state.isTtsEnabled) {
-                                ttsManager.speak(stableSign)
-                            }
-                        }
-
-                        state.copy(
-                            currentSign = stableSign,
-                            confidence = meanConf,
-                            translationHistory = updatedHistory,
-                            simulatedLandmarks = singleHand,
-                            statusMessage = "Hand detected",
-                            debugMatchInfo = matchResult.debugInfo
-                        )
-                    }
+                val sign: String
+                val conf: Float
+                if (matchResult.label != "UNKNOWN") {
+                    sign = matchResult.label
+                    conf = matchResult.confidence
                 } else {
-                    _uiState.update {
-                        it.copy(
-                            currentSign = "Detecting...",
-                            confidence = confidence,
-                            simulatedLandmarks = singleHand,
-                            statusMessage = "Hand detected",
-                            debugMatchInfo = matchResult.debugInfo
-                        )
+                    val fallback = classifierEngine.classifyGesture(hand.landmarks)
+                    sign = fallback.gestureName
+                    conf = fallback.confidence
+                }
+
+                debugBuilder.append("[${hand.handedness} (score: %.2f): %s (conf: %d%%)] ".format(hand.score, sign, (conf * 100).toInt()))
+
+                val frames = if (isLeftHand) leftFrames else rightFrames
+                if (sign != "UNKNOWN" && conf >= 0.70f) {
+                    frames.add(Pair(sign, conf))
+                    if (frames.size > windowSize) frames.removeAt(0)
+                } else {
+                    frames.add(Pair("UNKNOWN", 0f))
+                    if (frames.size > windowSize) frames.removeAt(0)
+                }
+
+                val validFrames = frames.filter { it.first != "UNKNOWN" }
+                val signCounts = validFrames.groupingBy { it.first }.eachCount()
+                val dominant = signCounts.entries.maxByOrNull { it.value }
+
+                if (dominant != null && dominant.value >= requiredStableFrames) {
+                    val stable = dominant.key
+                    val meanC = validFrames.filter { it.first == stable }.map { it.second }.average().toFloat()
+                    if (meanC >= 0.70f) {
+                        if (isLeftHand) {
+                            leftDetected = stable
+                            leftConf = meanC
+                        } else {
+                            rightDetected = stable
+                            rightConf = meanC
+                        }
                     }
                 }
-            } else {
-                _uiState.update {
-                    it.copy(
-                        currentSign = "Detecting...",
-                        confidence = confidence,
-                        simulatedLandmarks = singleHand,
-                        statusMessage = "Hand detected",
-                        debugMatchInfo = matchResult.debugInfo
-                    )
+            }
+
+            // Determine main label (most confident of the two hands)
+            val mainSign: String
+            val mainConf: Float
+            val historyHandTag: String
+
+            when {
+                leftDetected != "-" && rightDetected != "-" -> {
+                    if (leftConf >= rightConf) {
+                        mainSign = leftDetected
+                        mainConf = leftConf
+                        historyHandTag = " (Left)"
+                    } else {
+                        mainSign = rightDetected
+                        mainConf = rightConf
+                        historyHandTag = " (Right)"
+                    }
                 }
+                leftDetected != "-" -> {
+                    mainSign = leftDetected
+                    mainConf = leftConf
+                    historyHandTag = " (Left)"
+                }
+                rightDetected != "-" -> {
+                    mainSign = rightDetected
+                    mainConf = rightConf
+                    historyHandTag = " (Right)"
+                }
+                else -> {
+                    mainSign = if (hands.isNotEmpty()) "Detecting..." else "No hand detected"
+                    mainConf = 0f
+                    historyHandTag = ""
+                }
+            }
+
+            _uiState.update { state ->
+                var updatedHistory = state.translationHistory
+                if (mainSign != "No hand detected" && mainSign != "Detecting..." && mainSign != "UNKNOWN") {
+                    val recordText = "$mainSign$historyHandTag"
+                    val isNewGesture = (historyHandTag.contains("Left") && lastAddedLeftSign != mainSign) ||
+                                       (historyHandTag.contains("Right") && lastAddedRightSign != mainSign)
+
+                    if (historyHandTag.contains("Left") && isNewGesture) lastAddedLeftSign = mainSign
+                    if (historyHandTag.contains("Right") && isNewGesture) lastAddedRightSign = mainSign
+
+                    if (isNewGesture) {
+                        updatedHistory = listOf(TranslationRecord(signText = recordText, confidence = mainConf)) + state.translationHistory.take(19)
+                        if (state.isTtsEnabled) {
+                            ttsManager.speak(mainSign)
+                        }
+                    }
+                }
+
+                state.copy(
+                    currentSign = mainSign,
+                    confidence = mainConf,
+                    leftSign = leftDetected,
+                    rightSign = rightDetected,
+                    translationHistory = updatedHistory,
+                    simulatedHands = hands,
+                    statusMessage = "Hands detected: ${hands.size}",
+                    debugMatchInfo = debugBuilder.toString()
+                )
             }
         }
     }
@@ -210,19 +247,25 @@ class TranslatorViewModel(application: Application) : AndroidViewModel(applicati
                 translationHistory = emptyList(),
                 currentSign = "No hand detected",
                 confidence = 0f,
-                simulatedLandmarks = emptyList()
+                leftSign = "-",
+                rightSign = "-",
+                simulatedHands = emptyList()
             )
         }
     }
 
     fun resetState() {
-        recentFrames.clear()
-        lastAddedSign = ""
+        leftFrames.clear()
+        rightFrames.clear()
+        lastAddedLeftSign = ""
+        lastAddedRightSign = ""
         _uiState.update {
             it.copy(
                 currentSign = "No hand detected",
                 confidence = 0f,
-                simulatedLandmarks = emptyList(),
+                leftSign = "-",
+                rightSign = "-",
+                simulatedHands = emptyList(),
                 statusMessage = "No hand detected",
                 debugMatchInfo = ""
             )

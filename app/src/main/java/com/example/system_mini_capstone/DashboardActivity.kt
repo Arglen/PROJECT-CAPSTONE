@@ -80,7 +80,7 @@ class DashboardActivity : SignLinkBaseActivity() {
                         startActivity(Intent(this@DashboardActivity, LessonListActivity::class.java))
                     },
                     onOpenAdminConsole = {
-                        startActivity(Intent(this@DashboardActivity, AdminAnalyticsActivity::class.java))
+                        startActivity(Intent(this@DashboardActivity, com.example.system_mini_capstone.admin.AdminConsoleActivity::class.java))
                     },
                     onOpenAccount = {
                         startActivity(Intent(this@DashboardActivity, AccountActivity::class.java))
@@ -108,7 +108,6 @@ class DashboardActivity : SignLinkBaseActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     uiState: DashboardUiState,
@@ -163,7 +162,7 @@ fun DashboardScreen(
             contentPadding = PaddingValues(
                 start = 24.dp,
                 end = 24.dp,
-                top = 24.dp,
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp,
                 bottom = innerPadding.calculateBottomPadding() + 24.dp
             ),
             verticalArrangement = Arrangement.spacedBy(20.dp)

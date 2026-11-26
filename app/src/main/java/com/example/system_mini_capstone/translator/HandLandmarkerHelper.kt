@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.example.system_mini_capstone.admin.config.SystemConfigManager
 import com.example.system_mini_capstone.ml.HandLandmark
+import com.example.system_mini_capstone.ml.HandResult
+import com.example.system_mini_capstone.ml.toLogicalHandedness
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
@@ -25,12 +27,12 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * CameraX and MediaPipe Vision Pipeline Helper supporting front/back camera switching,
- * dynamic mirroring, and saved lens facing persistence.
+ * CameraX and MediaPipe Vision Pipeline Helper supporting up to 2 hands detection,
+ * front/back camera switching, dynamic mirroring, and correct logical handedness mapping.
  */
 class HandLandmarkerHelper(
     private val context: Context,
-    private val onLandmarksDetected: (List<HandLandmark>) -> Unit,
+    private val onHandsDetected: (List<HandResult>) -> Unit,
     private val onCameraSwitched: () -> Unit = {},
     private val onError: (String) -> Unit = {}
 ) {
@@ -56,7 +58,7 @@ class HandLandmarkerHelper(
             val options = HandLandmarker.HandLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
                 .setRunningMode(RunningMode.LIVE_STREAM)
-                .setNumHands(if (gestureConfig.detectTwoHands) 2 else 1)
+                .setNumHands(2) // Up to 2 hands supported
                 .setMinHandDetectionConfidence(gestureConfig.minDetectionConfidence)
                 .setMinHandPresenceConfidence(gestureConfig.minPresenceConfidence)
                 .setMinTrackingConfidence(gestureConfig.minTrackingConfidence)
@@ -70,7 +72,7 @@ class HandLandmarkerHelper(
                 .build()
 
             handLandmarker = HandLandmarker.createFromOptions(context, options)
-            Log.i(TAG, "MediaPipe HandLandmarker initialized successfully")
+            Log.i(TAG, "MediaPipe HandLandmarker initialized for dual-hand detection")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize MediaPipe HandLandmarker: ${e.message}", e)
             onError("Failed to load hand model: ${e.message}")
@@ -210,7 +212,7 @@ class HandLandmarkerHelper(
     private fun analyzeImage(imageProxy: ImageProxy) {
         if (handLandmarker == null) {
             imageProxy.close()
-            onLandmarksDetected(emptyList())
+            onHandsDetected(emptyList())
             return
         }
 
@@ -230,11 +232,11 @@ class HandLandmarkerHelper(
                 val frameTime = SystemClock.uptimeMillis()
                 handLandmarker?.detectAsync(mpImage, frameTime)
             } else {
-                onLandmarksDetected(emptyList())
+                onHandsDetected(emptyList())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error processing image frame for hand landmarks: ${e.message}", e)
-            onLandmarksDetected(emptyList())
+            onHandsDetected(emptyList())
         } finally {
             imageProxy.close()
         }
@@ -252,19 +254,33 @@ class HandLandmarkerHelper(
     }
 
     private fun processLandmarkerResult(result: HandLandmarkerResult) {
-        val landmarksList = mutableListOf<HandLandmark>()
+        val handResults = mutableListOf<HandResult>()
         val landmarks = result.landmarks()
+        val handednessList = result.handedness()
         val mirrored = isMirrored()
 
         if (!landmarks.isNullOrEmpty()) {
-            for (hand in landmarks) {
+            for (i in landmarks.indices) {
+                val hand = landmarks[i]
+                val landmarksList = mutableListOf<HandLandmark>()
                 for (point in hand) {
                     val px = if (mirrored) 1f - point.x() else point.x()
                     landmarksList.add(HandLandmark(px, point.y(), point.z()))
                 }
+
+                val rawCategory = if (!handednessList.isNullOrEmpty() && i < handednessList.size) {
+                    handednessList[i].firstOrNull()
+                } else {
+                    null
+                }
+                val rawLabel = rawCategory?.categoryName() ?: "Right"
+                val rawScore = rawCategory?.score() ?: 1.0f
+
+                val logicalHandedness = toLogicalHandedness(rawLabel, mirrored, rawScore)
+                handResults.add(HandResult(logicalHandedness, rawScore, landmarksList))
             }
         }
-        onLandmarksDetected(landmarksList)
+        onHandsDetected(handResults)
     }
 
     fun clear() {
