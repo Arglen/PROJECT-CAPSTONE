@@ -8,6 +8,8 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -29,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,6 +85,9 @@ class RegisterActivity : SignLinkBaseActivity() {
                         onConfirmPasswordChanged = viewModel::onConfirmPasswordChanged,
                         onTogglePasswordVisibility = viewModel::togglePasswordVisibility,
                         onRegisterClick = viewModel::register,
+                        onGoogleLoginClick = {
+                            viewModel.signInWithGoogle(this)
+                        },
                         onDismissError = viewModel::dismissError,
                         onBackToLogin = { finish() },
                         modifier = Modifier.fillMaxSize()
@@ -109,6 +115,7 @@ fun RegisterScreenContent(
     onConfirmPasswordChanged: (String) -> Unit,
     onTogglePasswordVisibility: () -> Unit,
     onRegisterClick: () -> Unit,
+    onGoogleLoginClick: () -> Unit,
     onDismissError: () -> Unit,
     onBackToLogin: () -> Unit,
     modifier: Modifier = Modifier
@@ -141,7 +148,6 @@ fun RegisterScreenContent(
                 .background(SignLinkColors.purpleTint),
             contentAlignment = Alignment.Center
         ) {
-            // TODO: Use illustration asset when available
             Text(text = "🚀", fontSize = 42.sp)
         }
 
@@ -297,6 +303,64 @@ fun RegisterScreenContent(
                 fontWeight = FontWeight.SemiBold,
                 color = SignLinkColors.primary
             )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Divider "or"
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            HorizontalDivider(modifier = Modifier.weight(1f), color = SignLinkColors.outline)
+            Text("or", style = MaterialTheme.typography.bodySmall, color = SignLinkColors.secondaryText)
+            HorizontalDivider(modifier = Modifier.weight(1f), color = SignLinkColors.outline)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Continue with Google Button
+        OutlinedButton(
+            onClick = onGoogleLoginClick,
+            enabled = !uiState.isLoading,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, SignLinkColors.outline),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = SignLinkColors.surface,
+                contentColor = SignLinkColors.onBackground
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (uiState.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = SignLinkColors.primary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_google_logo),
+                        contentDescription = "Google Logo",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Continue with Google",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        color = SignLinkColors.onBackground
+                    )
+                }
+            }
         }
     }
 }

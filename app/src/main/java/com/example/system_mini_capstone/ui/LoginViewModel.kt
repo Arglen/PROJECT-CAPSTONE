@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.system_mini_capstone.data.SessionManager
 import com.example.system_mini_capstone.data.network.AuthRepository
 import com.example.system_mini_capstone.data.network.AuthRepositoryImpl
+import com.example.system_mini_capstone.data.network.GoogleAuthHelper
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -80,6 +81,30 @@ class LoginViewModel @JvmOverloads constructor(
                 passwordError = null,
                 errorMessage = null
             )
+        }
+    }
+
+    fun signInWithGoogle(context: android.content.Context) {
+        if (_uiState.value.isLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val result = GoogleAuthHelper.signInWithGoogle(context, sessionManager)
+            result.onSuccess { email ->
+                _uiState.update { it.copy(isLoading = false) }
+                _eventFlow.emit(LoginEvent.Success(role = sessionManager.getUserRole(), email = email))
+            }.onFailure { exception ->
+                if (exception is androidx.credentials.exceptions.GetCredentialCancellationException) {
+                    _uiState.update { it.copy(isLoading = false) }
+                } else {
+                    val errorMsg = exception.localizedMessage ?: "Google sign-in failed. Please try again."
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = errorMsg
+                        )
+                    }
+                }
+            }
         }
     }
 

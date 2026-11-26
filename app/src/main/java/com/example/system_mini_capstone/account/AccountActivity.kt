@@ -26,8 +26,10 @@ import androidx.compose.ui.unit.sp
 import com.example.system_mini_capstone.DashboardActivity
 import com.example.system_mini_capstone.LoginActivity
 import com.example.system_mini_capstone.RegisterActivity
+import com.example.system_mini_capstone.SignLinkBaseActivity
 import com.example.system_mini_capstone.admin.AdminAnalyticsActivity
 import com.example.system_mini_capstone.data.SessionManager
+import com.example.system_mini_capstone.data.network.GoogleAuthHelper
 import com.example.system_mini_capstone.data.network.UserRole
 import com.example.system_mini_capstone.ui.components.SignLinkBackButton
 import com.example.system_mini_capstone.ui.components.SignLinkPrimaryButton
@@ -35,7 +37,7 @@ import com.example.system_mini_capstone.ui.components.SignLinkSecondaryButton
 import com.example.system_mini_capstone.ui.theme.SignLinkColors
 import com.example.system_mini_capstone.ui.theme.System_mini_capstoneTheme
 
-class AccountActivity : ComponentActivity() {
+class AccountActivity : SignLinkBaseActivity() {
 
     private val sessionManager by lazy { SessionManager(this) }
 
@@ -62,7 +64,7 @@ class AccountActivity : ComponentActivity() {
                         startActivity(Intent(this, AdminAnalyticsActivity::class.java))
                     },
                     onLogout = {
-                        sessionManager.clearSession()
+                        GoogleAuthHelper.signOut(this, sessionManager)
                         val intent = Intent(this, LoginActivity::class.java).apply {
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                         }

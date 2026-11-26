@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.system_mini_capstone.data.SessionManager
 import com.example.system_mini_capstone.data.network.AuthErrorMapper
+import com.example.system_mini_capstone.data.network.GoogleAuthHelper
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
@@ -76,6 +77,30 @@ class RegisterViewModel @JvmOverloads constructor(
 
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun signInWithGoogle(context: android.content.Context) {
+        if (_uiState.value.isLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val result = GoogleAuthHelper.signInWithGoogle(context, sessionManager)
+            result.onSuccess { email ->
+                _uiState.update { it.copy(isLoading = false) }
+                _eventFlow.emit(RegisterEvent.Success(email = email, displayName = email.substringBefore("@")))
+            }.onFailure { exception ->
+                if (exception is androidx.credentials.exceptions.GetCredentialCancellationException) {
+                    _uiState.update { it.copy(isLoading = false) }
+                } else {
+                    val errorMsg = exception.localizedMessage ?: "Google sign-in failed. Please try again."
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = errorMsg
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun register() {
